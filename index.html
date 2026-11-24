@@ -4,16 +4,25 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Pirata+One&display=swap" rel="stylesheet" />
     <title>Cyano Creator — digital negatives for cyanotype</title>
   </head>
   <body>
     <div id="app">
-      <main id="stage" aria-label="Preview"></main>
-      <aside id="side">
-        <header>
-          <h1>Cyano Creator</h1>
-          <p>Still images for cyanotype · prompt or code → controls → digital negative PNG / TIFF</p>
+      <section id="workspace">
+        <header id="topbar">
+          <div class="brand-wrap">
+            <h1 class="brand">Cyano Creator</h1>
+            <span class="brand-sep" aria-hidden="true"></span>
+            <span class="brand-tag" title="Still images for cyanotype · prompt or code → controls → digital negative PNG / TIFF">Generative · Cyanotype</span>
+          </div>
+          <div id="topactions" class="topactions"></div>
         </header>
+        <main id="stage" aria-label="Preview"></main>
+      </section>
+      <aside id="side">
         <div id="panel"></div>
       </aside>
     </div>

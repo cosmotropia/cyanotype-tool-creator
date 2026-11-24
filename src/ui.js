@@ -1,7 +1,8 @@
 import { GROUPS, SECTIONS, SELECTS, PRESETS, FORMS } from './params.js'
 import { isUploadableImage } from './source.js'
-import { AI_PROMPTS } from './openai.js'
+import { AI_PROMPTS, AI_ENABLED, AI_SOON_TEXT, AI_SOON_SHORT } from './openai.js'
 import { createFramesPanel } from './framesui.js'
+import { LANGUAGES, getLang, setLang, onLangChange, t } from './i18n.js'
 
 function el(tag, attrs = {}, children = []) {
   const e = document.createElement(tag)
@@ -17,6 +18,74 @@ function el(tag, attrs = {}, children = []) {
 
 // Decimals shown for a control, from its step.
 const decimals = (c) => (c.step >= 1 ? 0 : c.step >= 0.1 ? 1 : c.step >= 0.01 ? 2 : 3)
+
+// Small stroke icons (static markup, no user input).
+const ICONS = {
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+  open: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  download: '<path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/>',
+  sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+  redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  spark: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>',
+}
+function ico(name) {
+  const s = document.createElement('span')
+  s.className = 'ico'
+  s.setAttribute('aria-hidden', 'true')
+  s.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`
+  return s
+}
+
+// A collapsible section with a chevron header (used for Idea, Parameters, Reference).
+function fold(title, open, children) {
+  const body = el('div', { class: 'foldbody' }, children)
+  const head = el('button', { type: 'button', class: 'foldhead' }, [el('span', { text: title }), ico('chevron')])
+  const wrap = el('section', { class: 'fold' }, [head, body])
+  const set = (on) => {
+    body.hidden = !on
+    head.setAttribute('aria-expanded', String(on))
+    wrap.classList.toggle('open', on)
+  }
+  head.addEventListener('click', () => set(body.hidden))
+  set(open)
+  return wrap
+}
+
+// Dropdown for the top bar. Closes on outside click, Escape, or after picking an item.
+const openMenus = new Set()
+const closeMenus = () => openMenus.forEach((close) => close())
+document.addEventListener('click', closeMenus)
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeMenus()
+})
+function menu(iconName, label, items, iconOnly = false) {
+  const panel = el('div', { class: 'menupanel', role: 'menu', hidden: '' }, items)
+  const btn = el('button', { type: 'button', class: 'topbtn', 'aria-haspopup': 'true', 'aria-expanded': 'false', 'aria-label': label, title: label }, [
+    ico(iconName),
+    iconOnly ? null : el('span', { text: label }),
+  ])
+  const close = () => {
+    panel.hidden = true
+    btn.setAttribute('aria-expanded', 'false')
+  }
+  openMenus.add(close)
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    const wasOpen = !panel.hidden
+    closeMenus()
+    if (!wasOpen) {
+      panel.hidden = false
+      btn.setAttribute('aria-expanded', 'true')
+    }
+  })
+  panel.addEventListener('click', (e) => {
+    e.stopPropagation()
+    if (e.target.closest('button')) close()
+  })
+  return el('div', { class: 'menu' }, [btn, panel])
+}
 
 const STAGE_OF = Object.fromEntries(Object.entries(SECTIONS).map(([k, s]) => [k, s.stage]))
 
@@ -147,7 +216,7 @@ export function createUI(root, params, h) {
   ))
   const aiText = el('textarea', { rows: 5, placeholder: 'Describe the image you want to start from (e.g. a skeletal flower on a vertebral spine, glass jellyfish with beaded tentacles…)' })
   aiPromptSel.addEventListener('change', () => {
-    if (aiPromptSel.value) aiText.value = AI_PROMPTS[aiPromptSel.value]
+    if (aiPromptSel.value) aiText.value = t(AI_PROMPTS[aiPromptSel.value]) // the idea, written in the current language
     aiPromptSel.value = ''
   })
   const cyanoCb = el('input', { type: 'checkbox' })
@@ -165,20 +234,25 @@ export function createUI(root, params, h) {
     el('button', { type: 'button', text: 'Generate → B', onclick: () => h.onAI('generate', 'B', aiOpts()) }),
     el('button', { type: 'button', text: 'Vary current result → A', title: 'Sends the current result to OpenAI as a starting point', onclick: () => h.onAI('refine', 'A', aiOpts()) }),
   ]
+  // Coming soon: the AI controls stay visible but locked until VITE_AI_ENABLED=true (see openai.js).
+  const aiControls = [aiPromptSel, aiText, cyanoCb, aiQuality, ...aiButtons]
+  if (!AI_ENABLED) for (const c of aiControls) c.disabled = true
 
   const slots = {}
+  const slotFiles = {} // id -> the slot's hidden file input (the top bar's "Open" uses picture A's)
   function imageSlot(id, label, codeLabel) {
     const thumb = el('img', { class: 'thumb', alt: `Picture ${id}`, width: 56, height: 56 })
     const name = el('span', { class: 'slotname', text: 'none' })
     const file = el('input', { type: 'file', accept: 'image/*,.heic,.heif,image/heic,image/heif', hidden: '' })
+    slotFiles[id] = file
     file.addEventListener('change', () => {
       if (file.files?.[0]) h.onImage(id, 'file', file.files[0])
       file.value = ''
     })
     const buttons = [
-      el('button', { type: 'button', text: 'Upload', title: 'JPEG, PNG, WebP, HEIC…', onclick: () => file.click() }),
-      el('button', { type: 'button', text: 'Sample', onclick: () => h.onImage(id, 'sample') }),
-      el('button', { type: 'button', text: codeLabel, title: id === 'A' ? 'Use the code generator as the source' : 'Snapshot of the code generator', onclick: () => h.onImage(id, 'code') }),
+      el('button', { type: 'button', 'data-act': 'upload', text: 'Upload', title: 'JPEG, PNG, WebP, HEIC…', onclick: () => file.click() }),
+      el('button', { type: 'button', 'data-act': 'sample', text: 'Sample', onclick: () => h.onImage(id, 'sample') }),
+      el('button', { type: 'button', 'data-act': 'code', text: codeLabel, title: id === 'A' ? 'Use the code generator as the source' : 'Snapshot of the code generator', onclick: () => h.onImage(id, 'code') }),
     ]
     if (id === 'B') buttons.push(el('button', { type: 'button', text: 'Clear', onclick: () => h.onImage(id, 'clear') }))
     const box = el('div', { class: 'slot' }, [
@@ -208,27 +282,40 @@ export function createUI(root, params, h) {
   })
   widgets.seed = { sync: () => (seedInput.value = params.seed) }
 
-  const createBlock = el('div', { class: 'block create' }, [
-    el('h2', { text: '1 · Start from a picture' }),
-    el('div', { class: 'hint', text: 'Describe it and let AI draw it, upload your own, or use the code generators. Then shape it with the controls below.' }),
+  // Idea: the AI prompt. Reference (optional): picture A and B. Seed. The Generate buttons sit in a dock under all of it.
+  const ideaFold = fold('Idea', true, [
+    el('div', { class: 'hint', text: AI_ENABLED ? 'Describe it and let AI draw it, upload your own, or use the code generators. Then shape it with the controls below.' : AI_SOON_TEXT }),
     aiPromptSel,
     aiText,
     el('label', { class: 'toggle' }, [cyanoCb, el('span', { text: 'Cyanotype-friendly wording (black & white, white subject on black)' })]),
     aiQuality,
-    el('div', { class: 'row2 wrap' }, aiButtons),
-    aiMsg,
-    imageSlot('A', 'Picture A (main)', 'Code'),
-    imageSlot('B', 'Picture B (optional, morph)', 'Code'),
-    el('div', { class: 'row2' }, [
-      el('button', { type: 'button', text: 'Reset all controls', title: 'Return every transform, filament, tone and cyanotype control to its default (the picture itself stays)', onclick: () => h.onResetAll() }),
-    ]),
-    el('div', { class: 'row2' }, [
+  ])
+  // Open by default so Picture B is visible from the start. The mix slider lives in Parameters → Curvature & deformation.
+  const referenceFold = fold('Pictures & mix (A + B)', true, [
+    el('div', {
+      class: 'hint',
+      text: 'Picture A is the main picture. Upload a second one as Picture B, then drag "Morph A ↔ B" in Parameters → Curvature & deformation: 0 = only A, 1 = only B, in between = a mix of both.',
+    }),
+    imageSlot('A', 'Picture A · main', 'Code'),
+    imageSlot('B', 'Picture B · to mix with A', 'Code'),
+  ])
+  const seedBlock = el('div', { class: 'block' }, [
+    el('div', { class: 'seedrow' }, [
       el('span', { class: 'lbl', text: 'Seed' }),
       seedInput,
       el('button', { type: 'button', text: 'New seed', onclick: () => h.onNewSeed() }),
       el('button', { type: 'button', text: 'Randomize', onclick: () => h.onRandomize() }),
     ]),
   ])
+  aiButtons[0].classList.add('generate')
+  aiButtons[0].prepend(ico('spark'))
+  if (!AI_ENABLED) {
+    ideaFold.querySelector('.foldhead').append(el('span', { class: 'soonbadge', text: 'Coming soon' }))
+    ideaFold.classList.add('ai-locked')
+    aiMsg.textContent = AI_SOON_SHORT
+    aiMsg.dataset.kind = 'soon'
+  }
+  const dock = el('div', { class: 'dock' }, [aiMsg, aiButtons[0], el('div', { class: 'row2 wrap' }, [aiButtons[1], aiButtons[2]])])
 
   // ===================== 2-4. Control sections =====================
   const sectionEls = {}
@@ -282,20 +369,11 @@ export function createUI(root, params, h) {
     ]),
   )
 
-  const undoBtn = el('button', { type: 'button', text: '↶ Undo', title: 'Undo (⌘Z)', onclick: () => h.onUndo() })
-  const redoBtn = el('button', { type: 'button', text: '↷ Redo', title: 'Redo (⇧⌘Z)', onclick: () => h.onRedo() })
+  // Undo / Redo live in the top bar now (see "Top bar" below).
+  const undoBtn = el('button', { type: 'button', class: 'topbtn', 'aria-label': 'Undo', title: 'Undo (⌘Z)', onclick: () => h.onUndo() }, [ico('undo')])
+  const redoBtn = el('button', { type: 'button', class: 'topbtn', 'aria-label': 'Redo', title: 'Redo (⇧⌘Z)', onclick: () => h.onRedo() }, [ico('redo')])
   undoBtn.disabled = true
   redoBtn.disabled = true
-  sectionEls.cyano.append(
-    el('div', { class: 'block flat' }, [
-      el('div', { class: 'row2 wrap' }, [
-        undoBtn,
-        redoBtn,
-        el('button', { type: 'button', text: 'Copy settings', title: 'Copy every setting (⌘C) so you can paste it back later', onclick: () => h.onCopySettings() }),
-        el('button', { type: 'button', text: 'Paste settings', title: 'Paste settings copied from this app (⌘V)', onclick: () => h.onPasteSettings() }),
-      ]),
-    ]),
-  )
 
   // ===================== 5. Export =====================
   const status = el('div', { class: 'status' })
@@ -317,20 +395,97 @@ export function createUI(root, params, h) {
     exportInfo,
   ])
 
-  root.append(
-    createBlock,
-    sectionEls.frames,
-    sectionEls.cyano,
-    sectionEls.code,
-    sectionEls.transform,
-    sectionEls.effects,
-    sectionEls.filaments,
-    sectionEls.measure,
-    sectionEls.tone,
-    exportBlock,
-    el('div', { class: 'hint keys' }, ['Double-click a slider to reset · R: randomize · E: export · H: hand (move picture) · O: overlay tool (move / resize the selected overlay) · ⌘Z undo · ⇧⌘Z redo · ⌘C / ⌘V copy / paste settings']),
-    status,
+  // ===================== Layout: tabs =====================
+  // Create: idea, parameters (code generator + transform), reference pictures, seed, Generate.
+  // Cyanotype: preview mode, adjustments, tone & print export. Layers: overlays, readings, effects, filaments, measurements.
+  const paramsFold = fold('Parameters', true, [sectionEls.code, sectionEls.transform])
+  const TABS = [['create', 'Create'], ['cyanotype', 'Cyanotype'], ['layers', 'Layers']]
+  const pane = (id, kids) => el('div', { class: 'tabpane', role: 'tabpanel', 'data-tab': id, 'aria-label': Object.fromEntries(TABS)[id] }, kids)
+  const panes = {
+    create: pane('create', [ideaFold, paramsFold, referenceFold, seedBlock, dock]),
+    cyanotype: pane('cyanotype', [sectionEls.cyano, sectionEls.tone, exportBlock]),
+    layers: pane('layers', [sectionEls.frames, sectionEls.effects, sectionEls.filaments, sectionEls.measure]),
+  }
+  const tabBtns = {}
+  function selectTab(id, focus = false) {
+    for (const [k] of TABS) {
+      panes[k].hidden = k !== id
+      tabBtns[k].setAttribute('aria-selected', String(k === id))
+      tabBtns[k].tabIndex = k === id ? 0 : -1
+    }
+    root.scrollTop = 0
+    if (focus) tabBtns[id].focus()
+  }
+  const tablist = el('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Panels' })
+  for (const [id, label] of TABS) {
+    tabBtns[id] = el('button', { type: 'button', class: 'tab', role: 'tab', text: label, onclick: () => selectTab(id) })
+    tablist.append(tabBtns[id])
+  }
+  tablist.addEventListener('keydown', (e) => {
+    const i = TABS.findIndex(([k]) => tabBtns[k].getAttribute('aria-selected') === 'true')
+    if (e.key === 'ArrowRight') selectTab(TABS[(i + 1) % TABS.length][0], true)
+    else if (e.key === 'ArrowLeft') selectTab(TABS[(i + TABS.length - 1) % TABS.length][0], true)
+  })
+  root.before(tablist)
+  root.append(panes.create, panes.cyanotype, panes.layers)
+  selectTab('create')
+
+  // ===================== Layout: top bar =====================
+  // Same actions as before, gathered in one place: undo / redo, open a picture, export, settings.
+  const doc = root.ownerDocument
+  const topbar = doc.getElementById('topbar')
+  const topActions = doc.getElementById('topactions')
+  const stageEl = doc.getElementById('stage')
+  const topProgress = el('div', { class: 'toprogress', hidden: '' }, [el('i')])
+  const menuPng = el('button', { type: 'button', class: 'menuitem', role: 'menuitem', onclick: () => h.onExport('png') }, [el('span', { text: 'Export PNG' }), el('kbd', { text: 'E' })])
+  const menuTiff = el('button', { type: 'button', class: 'menuitem', role: 'menuitem', onclick: () => h.onExport('tiff') }, [el('span', { text: 'Export TIFF' })])
+  const menuPrint = el('button', {
+    type: 'button',
+    class: 'menuitem',
+    role: 'menuitem',
+    onclick() {
+      selectTab('cyanotype')
+      exportBlock.scrollIntoView({ block: 'start' })
+    },
+  }, [el('span', { text: 'Print size & format…' })])
+  const exportBtns = [exportBtn, exportTiffBtn, menuPng, menuTiff]
+  const openBtn = el('button', { type: 'button', class: 'topbtn', title: 'Open a picture as picture A (JPEG, PNG, WebP, HEIC…)', onclick: () => slotFiles.A.click() }, [ico('open'), el('span', { text: 'Open' })])
+  const settingsMenu = menu('sliders', 'Settings', [
+    el('button', { type: 'button', class: 'menuitem', role: 'menuitem', title: 'Copy every setting (⌘C) so you can paste it back later', onclick: () => h.onCopySettings() }, [el('span', { text: 'Copy settings' }), el('kbd', { text: '⌘C' })]),
+    el('button', { type: 'button', class: 'menuitem', role: 'menuitem', title: 'Paste settings copied from this app (⌘V)', onclick: () => h.onPasteSettings() }, [el('span', { text: 'Paste settings' }), el('kbd', { text: '⌘V' })]),
+    el('button', { type: 'button', class: 'menuitem', role: 'menuitem', title: 'Return every transform, filament, tone and cyanotype control to its default (the picture itself stays)', onclick: () => h.onResetAll() }, [el('span', { text: 'Reset all controls' })]),
+    el('div', { class: 'menusep' }),
+    el('div', { class: 'menuhint', text: 'Double-click a slider to reset · R: randomize · E: export · H: hand (move picture) · O: overlay tool (move / resize the selected overlay) · ⌘Z undo · ⇧⌘Z redo · ⌘C / ⌘V copy / paste settings' }),
+  ], true)
+  // Language: the page follows the browser language the first time and then remembers the choice (see i18n.js).
+  const langItems = LANGUAGES.map(([code, name]) =>
+    el('button', { type: 'button', class: 'menuitem', role: 'menuitemradio', lang: code, 'data-lang': code, onclick: () => setLang(code) }, [
+      el('span', { text: name, translate: 'no' }),
+      el('span', { class: 'check', 'aria-hidden': 'true', text: '✓' }),
+    ]),
   )
+  const langMenu = menu('globe', 'Language', langItems, true)
+  const langCode = el('span', { class: 'langcode', translate: 'no' })
+  langMenu.querySelector('button.topbtn').append(langCode)
+  const syncLang = () => {
+    const cur = getLang()
+    langCode.textContent = cur.toUpperCase()
+    for (const b of langItems) b.setAttribute('aria-checked', String(b.dataset.lang === cur))
+  }
+  syncLang()
+  onLangChange(syncLang)
+
+  topActions?.append(
+    undoBtn,
+    redoBtn,
+    el('span', { class: 'topdivider', 'aria-hidden': 'true' }),
+    openBtn,
+    menu('download', 'Export', [menuPng, menuTiff, el('div', { class: 'menusep' }), menuPrint]),
+    langMenu,
+    settingsMenu,
+  )
+  topbar?.append(topProgress)
+  ;(doc.getElementById('workspace') || stageEl || root).append(status)
 
   function applyForm(form) {
     for (const node of root.querySelectorAll('[data-forms]')) {
@@ -374,8 +529,9 @@ export function createUI(root, params, h) {
       s.name.textContent = label
     },
     setAI({ configured, available, model }) {
-      aiConfigured = configured
-      for (const b of aiButtons) b.disabled = !configured
+      aiConfigured = configured && AI_ENABLED
+      for (const b of aiButtons) b.disabled = !aiConfigured
+      if (!AI_ENABLED) return // the coming-soon note set at build time stays
       aiMsg.textContent = !available
         ? 'AI proxy not reachable. Start the app with `npm run dev` (or `npm run preview`) so the local server can call OpenAI.'
         : configured
@@ -398,11 +554,13 @@ export function createUI(root, params, h) {
       const busy = frac != null
       progress.hidden = !busy
       progressLabel.hidden = !busy
-      exportBtn.disabled = busy
-      exportTiffBtn.disabled = busy
+      topProgress.hidden = !busy
+      for (const b of exportBtns) b.disabled = busy
       if (busy) {
         progress.value = frac
         progressLabel.textContent = label || 'Exporting…'
+        topProgress.firstChild.style.width = `${Math.round(frac * 100)}%`
+        status.textContent = label || 'Exporting…' // visible from every tab
       }
     },
     setHistory(canUndo, canRedo) {

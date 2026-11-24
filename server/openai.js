@@ -10,6 +10,7 @@ import { loadEnv } from 'vite'
 
 const API = 'https://api.openai.com/v1'
 const MAX_BODY = 30 * 1024 * 1024
+export const COMING_SOON = 'AI is coming soon. Set VITE_AI_ENABLED=true in .env when you are ready, then restart the dev server.'
 
 function readJson(req) {
   return new Promise((resolve, reject) => {
@@ -69,12 +70,17 @@ export function openaiProxy() {
     const route = req.url.split('?')[0]
     const key = env.OPENAI_API_KEY || process.env.OPENAI_API_KEY
     const model = env.OPENAI_IMAGE_MODEL || process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1'
+    // Coming soon: nothing reaches OpenAI until VITE_AI_ENABLED=true, even if a key is present.
+    const enabled = String(env.VITE_AI_ENABLED ?? process.env.VITE_AI_ENABLED ?? '').trim().toLowerCase() === 'true'
 
     try {
       if (route === '/api/openai/status' && req.method === 'GET') {
-        return send(res, 200, { configured: Boolean(key), model })
+        return send(res, 200, { enabled, configured: enabled && Boolean(key), model })
       }
       if (req.method !== 'POST') return send(res, 405, { error: 'Method not allowed' })
+      if (!enabled) {
+        return send(res, 403, { error: COMING_SOON })
+      }
       if (!key) {
         return send(res, 400, { error: 'OPENAI_API_KEY is not set. Add it to biomechanical-art/.env and restart the dev server.' })
       }

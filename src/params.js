@@ -22,9 +22,9 @@ export const SECTIONS = {
   code: { title: 'Code generator', stage: 'source', hint: 'Used when the source is code-made. Re-renders the picture.' },
   transform: { title: 'Transform', stage: 'base', hint: 'Reshapes the current picture.' },
   frames: {
-    title: 'Overlay photos',
+    title: 'Shapes & photos',
     stage: 'base',
-    hint: 'Extra photos on top of the picture, each cut into a shape (circle, triangle…). Pick one in the list to edit its size, shape and position.',
+    hint: 'Shapes on top of the picture, or on the plain black background. A solid shape is one flat tone; a photo shape shows a picture cut into the shape (circle, triangle…). Pick one in the list to edit it.',
   },
   filaments: { title: 'Filaments & light', stage: 'base', hint: 'Adds fibres and relief on top of the picture.' },
   measure: { title: 'Measurements', stage: 'base', hint: 'Numbers, ticks and a grid drawn on top. The picture is never moved or warped.' },

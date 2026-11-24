@@ -1,5 +1,14 @@
 // Browser-side helpers for the optional OpenAI proxy (see server/openai.js).
 // The API key never reaches the browser; these calls go to the local dev server.
+//
+// AI is "coming soon" until you switch it on: set VITE_AI_ENABLED=true in .env (and restart the dev server).
+// Off by default, so nothing calls OpenAI until you choose to. The same flag is read by the server (server/openai.js).
+export const AI_ENABLED = String(import.meta.env.VITE_AI_ENABLED ?? '').trim().toLowerCase() === 'true'
+
+// Shown in place of the AI controls while they are off.
+export const AI_SOON_TEXT =
+  'AI is coming soon. For now, upload your own picture or use the code generators, then shape it with the controls below.'
+export const AI_SOON_SHORT = 'Coming soon: AI generation is not enabled yet.'
 
 const STYLE =
   'isolated and centered on a pure black background, studio macro photography, strong rim lighting, ' +
@@ -29,6 +38,7 @@ async function post(path, payload) {
 }
 
 export async function aiStatus() {
+  if (!AI_ENABLED) return { configured: false, available: false, enabled: false } // no request while coming soon
   try {
     const r = await fetch('/api/openai/status')
     if (!r.ok) return { configured: false, available: false }

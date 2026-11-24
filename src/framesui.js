@@ -19,7 +19,12 @@ function el(tag, attrs = {}, children = []) {
 
 const thumbCache = new WeakMap() // source -> data url
 const shapeName = (f) => (FRAME_SHAPES.find(([v]) => v === f.shape) || [])[1] || f.shape
-const titleOf = (f, i) => `${i + 1} · ${shapeName(f)}${frameImages.has(f.id) ? '' : ' (no picture)'}${f.visible === false ? ' · hidden' : ''}`
+const titleOf = (f, i) =>
+  `${i + 1} · ${shapeName(f)}${f.fill === 'solid' ? ' · solid' : frameImages.has(f.id) ? '' : ' (no picture)'}${f.visible === false ? ' · hidden' : ''}`
+const toneCss = (t) => {
+  const v = Math.round(Math.min(1, Math.max(0, t)) * 255)
+  return `rgb(${v}, ${v}, ${v})`
+}
 const heading = (text) => el('div', { class: 'framegroup', text })
 
 function thumbFor(f) {
@@ -51,7 +56,12 @@ export function createFramesPanel(params, h) {
   const clearBtn = el('button', { type: 'button', text: 'Remove all overlays', onclick: () => h.onClear() })
 
   const root = el('div', { class: 'block flat framesblock' }, [
-    el('div', { class: 'row2' }, [shapeSel, el('button', { type: 'button', class: 'primary', text: '+ Add overlay', onclick: () => h.onAdd(shapeSel.value) })]),
+    el('div', { class: 'hint', text: 'Shapes sit on top of the black background or the picture. A solid shape needs no picture: it is one flat tone. A photo shape shows a picture cut into the shape.' }),
+    el('div', { class: 'row2' }, [shapeSel]),
+    el('div', { class: 'row2 wrap' }, [
+      el('button', { type: 'button', class: 'primary solid-add', text: '+ Solid shape', title: 'A flat tone shape: no picture needed', onclick: () => h.onAdd(shapeSel.value, 'solid') }),
+      el('button', { type: 'button', text: '+ Photo shape', title: 'A shape cut from a picture (give it one below)', onclick: () => h.onAdd(shapeSel.value, 'photo') }),
+    ]),
     layoutSel,
     list,
     editor,
@@ -94,7 +104,7 @@ export function createFramesPanel(params, h) {
     return node
   }
 
-  const DEFAULTS = { scale: 1, opacity: 1, brightness: 0, contrast: 1, soft: 0, border: 0, borderTone: 1, zoom: 1, panX: 0, panY: 0, rot: 0, x: 0, y: 0 }
+  const DEFAULTS = { scale: 1, opacity: 1, brightness: 0, contrast: 1, soft: 0, border: 0, borderTone: 1, zoom: 1, panX: 0, panY: 0, rot: 0, x: 0, y: 0, tone: 1 }
 
   function toggle(f, key, label) {
     const cb = el('input', { type: 'checkbox' })
@@ -218,11 +228,36 @@ export function createFramesPanel(params, h) {
     const showToggle = toggle(f, 'visible', 'Show this overlay')
     showToggle.querySelector('input').addEventListener('change', rebuild) // the list marks hidden overlays
 
+    // Fill: photo (needs a picture) or solid (one flat tone, no picture). Switching re-draws the editor.
+    const solid = f.fill === 'solid'
+    const fillBtns = [
+      ['photo', 'Photo'],
+      ['solid', 'Solid tone'],
+    ].map(([v, label]) =>
+      el('button', {
+        type: 'button',
+        class: 'seg',
+        'data-v': v,
+        text: label,
+        title: v === 'photo' ? 'Cut a picture into the shape' : 'Fill the shape with one flat tone (no picture needed)',
+        onclick() {
+          f.fill = v
+          h.onChange()
+          rebuild()
+        },
+      }),
+    )
+    fillBtns.forEach((b) => b.classList.toggle('on', b.dataset.v === (solid ? 'solid' : 'photo')))
+    const fillRow = el('div', { class: 'segmented', role: 'group', 'aria-label': 'Fill' }, fillBtns)
+    const toneSlider = slider(f, 'tone', 'Tone (0 black · 1 white)', 0, 1, 0.01)
+    const solidHint = el('div', { class: 'hint', text: 'Solid: no picture needed. The shape is painted in this tone over the black background.' })
+
     return [
       el('div', { class: 'editing', text: `Editing overlay ${i + 1}` }),
+      fillRow,
+      ...(solid ? [toneSlider, solidHint] : [slot]),
       showToggle,
       bar,
-      slot,
 
       heading('Size'),
       scaleS,
@@ -234,9 +269,7 @@ export function createFramesPanel(params, h) {
       heading('Look · independent of the picture below'),
       slider(f, 'opacity', 'Opacity', 0, 1, 0.01),
       el('label', { class: 'ctl' }, [el('span', { class: 'row', text: 'Mix with what is below' }), blend]),
-      slider(f, 'brightness', 'Brightness', -1, 1, 0.01),
-      slider(f, 'contrast', 'Contrast', 0.1, 4, 0.01),
-      toggle(f, 'invert', 'Invert this picture'),
+      ...(solid ? [] : [slider(f, 'brightness', 'Brightness', -1, 1, 0.01), slider(f, 'contrast', 'Contrast', 0.1, 4, 0.01), toggle(f, 'invert', 'Invert this picture')]),
 
       heading('Position'),
       slider(f, 'x', 'X (from centre)', -Math.ceil(params.printW), Math.ceil(params.printW), 0.1, ' cm'),
@@ -251,10 +284,7 @@ export function createFramesPanel(params, h) {
       slider(f, 'border', 'Outline thickness', 0, 2, 0.05, ' cm'),
       slider(f, 'borderTone', 'Outline brightness', 0, 1, 0.01),
 
-      heading('Picture inside the shape'),
-      slider(f, 'zoom', 'Zoom', 1, 6, 0.01),
-      slider(f, 'panX', 'Slide X', -1, 1, 0.01),
-      slider(f, 'panY', 'Slide Y', -1, 1, 0.01),
+      ...(solid ? [] : [heading('Picture inside the shape'), slider(f, 'zoom', 'Zoom', 1, 6, 0.01), slider(f, 'panX', 'Slide X', -1, 1, 0.01), slider(f, 'panY', 'Slide Y', -1, 1, 0.01)]),
     ].filter(Boolean)
   }
 
@@ -271,9 +301,15 @@ export function createFramesPanel(params, h) {
     }
     if (!frames.some((f) => f.id === selected)) selected = frames[0].id
     frames.forEach((f, i) => {
-      const thumb = el('img', { alt: '', width: 32, height: 32 })
-      const url = thumbFor(f)
-      if (url) thumb.src = url
+      let thumb
+      if (f.fill === 'solid') {
+        thumb = el('span', { class: 'swatch', 'aria-hidden': 'true' })
+        thumb.style.background = toneCss(f.tone)
+      } else {
+        thumb = el('img', { alt: '', width: 32, height: 32 })
+        const url = thumbFor(f)
+        if (url) thumb.src = url
+      }
       list.append(
         el('button', {
           type: 'button',

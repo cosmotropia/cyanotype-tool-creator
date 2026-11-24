@@ -58,6 +58,9 @@ export function sanitizeFrame(f) {
     panX: Math.min(1, Math.max(-1, num(f.panX, 0))), // slide the picture inside the frame
     panY: Math.min(1, Math.max(-1, num(f.panY, 0))),
     invert: !!f.invert,
+    // 'photo' = cut a picture into the shape (needs a picture). 'solid' = a flat tone, no picture needed (sits on the black background).
+    fill: f.fill === 'solid' ? 'solid' : 'photo',
+    tone: Math.min(1, Math.max(0, num(f.tone, 1))), // solid tone: 0 black, 1 white
     // Independent of the picture below: size multiplier, mixing, tone and visibility of this overlay only.
     scale: Math.min(6, Math.max(0.05, num(f.scale, 1))), // multiplies width and height
     blend: f.blend in BLEND_ID ? f.blend : 'normal',
@@ -74,6 +77,10 @@ export const sanitizeFrames = (list) => (Array.isArray(list) ? list.slice(0, 24)
 
 // Ready-made arrangements, sized from the print size so they always fit.
 export const FRAME_LAYOUTS = {
+  '3 solid circles on black': (W, H) => {
+    const d = round1(Math.min((W / 3) * 0.88, H * 0.8))
+    return [-1, 0, 1].map((i) => ({ shape: 'circle', fill: 'solid', tone: 1, x: round1((i * W) / 3), y: 0, w: d, h: d }))
+  },
   '3 circles in a row': (W, H) => {
     const d = round1(Math.min((W / 3) * 0.88, H * 0.8))
     return [-1, 0, 1].map((i) => ({ shape: 'circle', x: round1((i * W) / 3), y: 0, w: d, h: d }))
@@ -162,26 +169,55 @@ function shapeDist(shape, u, v) {
 }
 
 /**
+ * The top-most visible overlay under the point (xCm, yCm), measured in cm from the centre of the frame (y down),
+ * or null. Uses the same geometry as makeFrameLayer, so what you grab is what you see.
+ */
+export function hitFrame(frames, xCm, yCm) {
+  for (let i = frames.length - 1; i >= 0; i--) {
+    const f = frames[i]
+    if (f.visible === false || !(f.opacity > 0.001)) continue
+    if (f.fill !== 'solid' && !frameImages.has(f.id)) continue // not drawn, so nothing to grab
+    const sc = f.scale || 1
+    const hw = (f.w * sc) / 2
+    const hh = (f.h * sc) / 2
+    if (hw <= 0 || hh <= 0) continue
+    const rot = (f.rot * Math.PI) / 180
+    const c = Math.cos(rot)
+    const s = Math.sin(rot)
+    const dx = xCm - f.x
+    const dy = yCm - f.y
+    const u = (dx * c + dy * s) / hw
+    const v = (-dx * s + dy * c) / hh
+    if (shapeDist(SHAPE_ID[f.shape] ?? 0, u, v) < 1) return f
+  }
+  return null
+}
+
+/**
  * Returns compose(qx, qy, val) -> val with every frame painted over the picture value, or null when no frame
  * has a picture (so the common case costs nothing).
  */
 export function makeFrameLayer(p) {
-  const list = (p.frames || []).filter((f) => f.visible !== false && frameImages.has(f.id) && f.opacity > 0.001)
+  // Photo overlays need their picture; solid overlays need nothing.
+  const list = (p.frames || []).filter((f) => f.visible !== false && (f.fill === 'solid' || frameImages.has(f.id)) && f.opacity > 0.001)
   if (!list.length) return null
   const k = 2 / Math.max(0.1, p.printH) // frame units per cm
 
   const fr = list.map((f) => {
-    const src = frameImages.get(f.id)
+    const solid = f.fill === 'solid'
+    const src = solid ? null : frameImages.get(f.id)
     const sc = f.scale || 1
     const hw = (f.w * sc * k) / 2
     const hh = (f.h * sc * k) / 2
     const rot = (f.rot * Math.PI) / 180
-    const sAsp = src.w / src.h
+    const sAsp = solid ? 1 : src.w / src.h
     const bAsp = f.w / f.h
     const fw = sAsp > bAsp ? bAsp / sAsp : 1 // part of the picture that is visible (cover fit)
     const fh = sAsp > bAsp ? 1 : sAsp / bAsp
     const z = Math.max(1, f.zoom)
     return {
+      solid,
+      tone: f.tone ?? 1,
       src,
       shape: SHAPE_ID[f.shape] ?? 0,
       cx: f.x * k,
@@ -220,10 +256,15 @@ export function makeFrameLayer(p) {
       if (d >= 1) continue
       const t = Math.min(1, (1 - d) / f.feather)
       const a = t * t * (3 - 2 * t) * f.op
-      let fv = sampleGray(f.src, f.ox + u * f.flx * f.sx, f.oy + v * f.fly * f.sy)
-      if (f.invert) fv = 1 - fv
-      fv = (fv - 0.5) * f.contr + 0.5 + f.bright
-      fv = fv < 0 ? 0 : fv > 1 ? 1 : fv
+      let fv
+      if (f.solid) {
+        fv = f.tone // flat tone, no picture
+      } else {
+        fv = sampleGray(f.src, f.ox + u * f.flx * f.sx, f.oy + v * f.fly * f.sy)
+        if (f.invert) fv = 1 - fv
+        fv = (fv - 0.5) * f.contr + 0.5 + f.bright
+        fv = fv < 0 ? 0 : fv > 1 ? 1 : fv
+      }
       if (f.ring > 0) {
         const m = Math.min(1, Math.max(0, (d - (1 - f.ring)) / 0.012))
         fv += (f.ringTone - fv) * m

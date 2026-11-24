@@ -1,4 +1,5 @@
 import './style.css'
+import './i18n.js' // starts translating the page as the UI is built (see i18n.js)
 import p5 from 'p5'
 import { defaults, GROUPS, PRESETS, FORM_DEFAULT_PRESET, CLEAN_KEYS, ADJUST_KEYS, CYANO_KEYS, randomPreset, randomTransform, sizeToCm, sizeKeyFromCm, cmToPx } from './params.js'
 import { generateStructure } from './structure.js'
@@ -6,14 +7,14 @@ import { generateReliquary, generateMedusa } from './forms.js'
 import { renderStructure } from './render2d.js'
 import { sourceFromGray, sourceFromFile, sourceFromUrl, thumbUrl } from './source.js'
 import { samplePicture, filamentLayer, composeBase, postProcess, processLayers, floatToImageData, imageDataToCanvas } from './pipeline.js'
-import { aiStatus, aiGenerate, aiEdit, REFINE_PROMPT, CYANO_SUFFIX } from './openai.js'
+import { aiStatus, aiGenerate, aiEdit, REFINE_PROMPT, CYANO_SUFFIX, AI_ENABLED, AI_SOON_SHORT } from './openai.js'
 import { createUI } from './ui.js'
 import { clamp } from './math.js'
 import { encodePNG, encodeTIFF, toGray8, toGray16 } from './encode.js'
 import { simulatePrint } from './cyanotype.js'
 import { createDataPanel } from './datapanel.js'
 import { applyMeasures } from './measure.js'
-import { frameImages, newFrame, sanitizeFrame, sanitizeFrames, FRAME_LAYOUTS } from './frames.js'
+import { frameImages, newFrame, sanitizeFrame, sanitizeFrames, hitFrame, FRAME_LAYOUTS } from './frames.js'
 
 const params = defaults()
 
@@ -136,11 +137,11 @@ const emptyHint = Object.assign(document.createElement('div'), { className: 'emp
 const clickSlotA = (label) => {
   const box = panel.querySelector('.slot') // picture A is the first slot
   if (label === 'Upload') return box.querySelector('input[type="file"]').click()
-  ;[...box.querySelectorAll('button')].find((b) => b.textContent === label)?.click()
+  box.querySelector(`button[data-act="${label.toLowerCase()}"]`)?.click() // by data-act, not by text: the text is translated
 }
 const startRow = document.createElement('div')
 startRow.className = 'row2 emptyrow'
-for (const label of ['Upload', 'Sample', 'Code']) {
+for (const label of ['Code', 'Upload', 'Sample']) {
   startRow.append(
     Object.assign(document.createElement('button'), {
       type: 'button',
@@ -150,9 +151,32 @@ for (const label of ['Upload', 'Sample', 'Code']) {
     }),
   )
 }
+// Shapes on the plain black background: no picture needed. Opens the Layers tab and adds a solid shape there.
+startRow.append(
+  Object.assign(document.createElement('button'), {
+    type: 'button',
+    textContent: 'Shape on black',
+    title: 'Start with a solid shape on the black background (no picture needed)',
+    onclick: () => {
+      const tabs = panel.querySelectorAll('.tab')
+      tabs[tabs.length - 1]?.click() // Layers
+      panel.querySelector('.solid-add')?.click() // onAdd(shape, 'solid') switches the preview to the black background
+    },
+  }),
+)
+// Viewfinder marks around an empty frame (decoration only).
+const emptyFrame = Object.assign(document.createElement('div'), { className: 'emptyframe' })
+emptyFrame.setAttribute('aria-hidden', 'true')
+for (const c of ['tl', 'tr', 'bl', 'br']) emptyFrame.append(Object.assign(document.createElement('span'), { className: `corner ${c}` }))
+for (const c of ['pt', 'pl', 'pr']) emptyFrame.append(Object.assign(document.createElement('span'), { className: `plus ${c}`, textContent: '+' }))
 emptyHint.append(
-  Object.assign(document.createElement('h3'), { textContent: 'Start with a picture' }),
-  Object.assign(document.createElement('p'), { textContent: 'Upload your own picture, use a sample, or draw one with the code generator.' }),
+  emptyFrame,
+  Object.assign(document.createElement('h3'), { className: 'display-title', textContent: 'Start a creation' }),
+  Object.assign(document.createElement('p'), {
+    textContent: AI_ENABLED
+      ? 'Upload a reference, try a sample, draw one with the code generator, describe your idea to AI in the Idea panel, or place shapes on the black background.'
+      : 'Upload a reference, try a sample, draw one with the code generator, or place shapes on the black background.',
+  }),
   startRow,
 )
 stage.append(emptyHint)
@@ -321,6 +345,7 @@ const ui = createUI(panel, params, {
     }
   },
   async onAI(action, id, { prompt, quality, cyano }) {
+    if (!AI_ENABLED) return ui.setAIMessage(AI_SOON_SHORT, 'soon') // coming soon: nothing is sent
     prompt = (prompt || '').trim()
     if (action === 'refine' && slots.A.kind === 'none') return ui.setAIMessage('Nothing to vary yet: generate or load a picture first.', 'warn')
     if (action === 'refine' && !prompt) prompt = REFINE_PROMPT
@@ -348,14 +373,20 @@ const ui = createUI(panel, params, {
   },
   frames: {
     onChange: () => request('base'),
-    onAdd(shape) {
+    onAdd(shape, fill = 'photo') {
       const n = params.frames.length
-      const f = newFrame(params, shape, { x: ((n % 5) - 2) * 2, y: ((n % 5) - 2) * 1.5 })
+      const f = newFrame(params, shape, { x: ((n % 5) - 2) * 2, y: ((n % 5) - 2) * 1.5, fill })
       params.frames.push(f)
+      // Solid shapes on an empty canvas belong on the black background: show the Original view, where the background is black.
+      if (fill === 'solid' && slots.A.kind === 'none') ui.set('preview', 'mono')
       ui.openFrame(f.id)
       ui.rebuildFrames()
       request('base')
-      ui.setStatus('Overlay added · give it a picture with Upload, Sample or Code (Overlay photos section)')
+      ui.setStatus(
+        fill === 'solid'
+          ? 'Solid shape added on the black background · pick it in the list to change its tone, size or position'
+          : 'Photo shape added · give it a picture with Upload, Sample or Code (Layers tab)',
+      )
     },
     onLayout(name) {
       const old = params.frames
@@ -363,7 +394,7 @@ const ui = createUI(panel, params, {
       params.frames = cfgs.map((c, i) => (old[i] ? sanitizeFrame({ ...old[i], ...c }) : newFrame(params, c.shape, c)))
       ui.rebuildFrames()
       request('base')
-      ui.setStatus(`Layout "${name}" · pick each overlay in Overlay photos and give it a picture`)
+      ui.setStatus(`Layout "${name}" · pick each shape in the list (Shapes & photos) to set its tone or picture`)
     },
     onClear() {
       params.frames = []
@@ -762,7 +793,7 @@ const handBtn = Object.assign(document.createElement('button'), {
   type: 'button',
   className: 'handbtn',
   textContent: '✋ Hand',
-  title: 'Hand tool (H): drag the preview to move the picture',
+  title: 'Hand tool (H): drag a shape to move it, or drag the background to move the picture',
 })
 handBtn.addEventListener('click', () => setHand(!hand))
 const overlayBtn = Object.assign(document.createElement('button'), {
@@ -806,25 +837,40 @@ const startSketch = () =>
 
       // Drag / wheel act on the current source: camera for code, parallax and zoom for pictures.
       let drag = null
+      let grab = null // the overlay being dragged with the Hand / Overlay tool
       cnv.elt.addEventListener('pointerdown', (e) => {
         drag = { x: e.clientX, y: e.clientY }
+        grab = null
         cnv.elt.setPointerCapture(e.pointerId)
-        if (hand || ovMode) stage.classList.add('panning')
+        if (hand || ovMode) {
+          stage.classList.add('panning')
+          // Grab whatever shape is under the cursor (top-most first) and select it; otherwise the Hand moves the picture.
+          const r = cnv.elt.getBoundingClientRect()
+          const k = params.printH / r.height // cm per screen pixel
+          const hit = hitFrame(params.frames, (e.clientX - r.left - r.width / 2) * k, (e.clientY - r.top - r.height / 2) * k)
+          if (hit) {
+            grab = hit
+            if (ui.selectedFrame() !== hit.id) {
+              ui.openFrame(hit.id)
+              ui.rebuildFrames()
+            }
+          } else if (ovMode) grab = selectedOverlay() || null // Overlay tool: keep moving the selected one
+        }
       })
       cnv.elt.addEventListener('pointermove', (e) => {
         if (!drag) return
         const dx = e.clientX - drag.x
         const dy = e.clientY - drag.y
         drag = { x: e.clientX, y: e.clientY }
-        if (ovMode) {
-          const f = selectedOverlay()
-          if (f) {
-            const k = params.printH / cnv.elt.clientHeight // cm per screen pixel, so the overlay sticks to the cursor
-            f.x = clamp(Math.round((f.x + dx * k) * 100) / 100, -params.printW, params.printW)
-            f.y = clamp(Math.round((f.y + dy * k) * 100) / 100, -params.printH, params.printH)
-            ui.syncFrames()
-            request('base')
-          }
+        if (grab) {
+          const f = grab
+          const k = params.printH / cnv.elt.clientHeight // cm per screen pixel, so the shape sticks to the cursor
+          f.x = clamp(Math.round((f.x + dx * k) * 100) / 100, -params.printW, params.printW)
+          f.y = clamp(Math.round((f.y + dy * k) * 100) / 100, -params.printH, params.printH)
+          ui.syncFrames()
+          request('base')
+        } else if (ovMode) {
+          // Overlay tool with nothing to move
         } else if (hand) {
           // Frame space spans 2 units over the canvas height, so the picture sticks to the cursor.
           const k = 2 / cnv.elt.clientHeight
@@ -843,6 +889,7 @@ const startSketch = () =>
       })
       const end = () => {
         drag = null
+        grab = null
         stage.classList.remove('panning')
       }
       cnv.elt.addEventListener('pointerup', end)

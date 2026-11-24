@@ -56,7 +56,7 @@ export function createDataPanel({ onReadings }) {
   })
 
   return el('div', { class: 'block datablock' }, [
-    el('h2', { text: '1b · Readings (optional)' }),
+    el('h2', { text: 'Readings (optional)' }),
     el('div', {
       class: 'hint',
       text: 'Paste sensor data or a trajectory and it is written over the picture as numbers, with dimension lines around the subject. The picture stays as it is. Amount, density and the grid are in Measurements below.',

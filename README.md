@@ -38,10 +38,14 @@ Drag on the preview to change the camera (code) or the parallax (pictures); the 
 In text fields (prompt, numbers) the browser's own undo/copy/paste is used.
 The preview first draws a fast draft and then refines itself when you stop moving.
 
-## Optional: OpenAI
+## Optional: OpenAI (coming soon)
 
-1. Put your key in `.env` (copy `.env.example`): `OPENAI_API_KEY=...` (optionally `OPENAI_IMAGE_MODEL`).
-2. Restart `npm run dev` (also works with `npm run preview`).
+The AI controls are shown as **Coming soon** and stay locked until you switch them on in `.env`:
+
+1. Copy `.env.example` to `.env`.
+2. Set `VITE_AI_ENABLED=true` (off by default: nothing is sent to OpenAI while it is `false`, even if a key is present).
+3. Put your key: `OPENAI_API_KEY=...` (optionally `OPENAI_IMAGE_MODEL`).
+4. Restart `npm run dev` (also works with `npm run preview`). `VITE_` values are read at start-up, so a restart is needed.
 
 The key is only read by the local Vite server (`server/openai.js`) and never reaches the browser. `.env` is git-ignored.
 Nothing calls OpenAI unless you press a *Generate* / *Vary* button.
