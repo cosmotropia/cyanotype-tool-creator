@@ -12,6 +12,7 @@
     "vite": "^8.3.6"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.2",
     "heic-to": "^1.6.7",
     "p5": "^2.4.0"
   }

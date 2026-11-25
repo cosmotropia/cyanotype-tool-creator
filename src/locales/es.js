@@ -30,7 +30,24 @@ const strings = {
   Settings: 'Ajustes',
   Language: 'Idioma',
   'Export PNG': 'Exportar PNG',
+  'Export cyanotype': 'Exportar cianotipia',
+  'Saves the print (follows “Export content”: digital negative, original artwork or cyanotype simulation) as a PNG':
+    'Guarda la impresión (sigue «Contenido a exportar»: negativo digital, obra original o simulación de cianotipia) como PNG',
   'Export TIFF': 'Exportar TIFF',
+  'The same print as a TIFF': 'La misma impresión como TIFF',
+  'Drag to resize in proportion (Shift: free · Alt: from the centre)': 'Arrastra para cambiar el tamaño en proporción (Mayús: libre · Alt: desde el centro)',
+  'Drag to stretch this side (Alt: from the centre)': 'Arrastra para estirar este lado (Alt: desde el centro)',
+  'Drag to rotate (Shift: 15° steps)': 'Arrastra para girar (Mayús: pasos de 15°)',
+  'Shape to start with': 'Forma con la que empezar',
+  'The shape of the selected overlay, and of the next one you add': 'La forma de la capa seleccionada y de la siguiente que añadas',
+  'Export transparent PNG': 'Exportar PNG transparente',
+  'PNG with the main background removed: the black of the artwork (the white of the digital negative) becomes transparent':
+    'PNG sin el fondo principal: el negro de la obra (el blanco del negativo digital) pasa a ser transparente',
+  'Background cut-off': 'Corte del fondo',
+  'Transparent PNG: tones fainter than this become fully transparent. Raise it to remove a grainy or grey background':
+    'PNG transparente: los tonos más tenues que este valor pasan a ser totalmente transparentes. Súbelo para quitar un fondo con grano o grisáceo',
+  'Transparent PNG: the background is removed, so dark areas of a picture become see-through too. It follows “Export content” (the cyanotype simulation exports the original artwork).':
+    'PNG transparente: se quita el fondo, así que las zonas oscuras de una imagen también se vuelven transparentes. Sigue «Contenido a exportar» (la simulación de cianotipia exporta la obra original).',
   'Print size & format…': 'Tamaño y formato de impresión…',
   'Copy settings': 'Copiar ajustes',
   'Paste settings': 'Pegar ajustes',
@@ -105,6 +122,69 @@ const strings = {
   'Coming soon: AI generation is not enabled yet.': 'Próximamente: la generación con IA todavía no está activa.',
   'Upload a reference, try a sample, draw one with the code generator, or place shapes on the black background.':
     'Sube una referencia, prueba una muestra, dibuja una con el generador de código o coloca formas sobre el fondo negro.',
+
+  // ---- remove background ----
+  'Remove background': 'Quitar fondo',
+  'Remove the background of this picture and keep the subject (you can also save it as a transparent PNG)':
+    'Quita el fondo de esta imagen y conserva el sujeto (también puedes guardarlo como PNG transparente)',
+  'Remove the background of this picture and keep the subject: the shape updates in place (you can also save it as a transparent PNG)':
+    'Quita el fondo de esta imagen y conserva el sujeto: la forma se actualiza en el mismo sitio (también puedes guardarlo como PNG transparente)',
+  'Smart (AI)': 'Inteligente (IA)',
+  'Finds the main subject, like remove.bg or Canva. Runs on your computer': 'Encuentra el sujeto principal, como remove.bg o Canva. Funciona en tu computador',
+  'By brightness': 'Por brillo',
+  'Dark areas become transparent: best for white-on-black artwork': 'Las zonas oscuras pasan a ser transparentes: ideal para obras blancas sobre negro',
+  Method: 'Método',
+  View: 'Vista',
+  Cutout: 'Recorte',
+  Original: 'Original',
+  'The picture with the background removed': 'La imagen sin el fondo',
+  'The picture as it was': 'La imagen como estaba',
+  'Keep more': 'Conservar más',
+  'Raise it to keep faint parts of the subject, lower it to cut closer': 'Súbelo para conservar las partes tenues del sujeto, bájalo para cortar más ajustado',
+  'Edge softness': 'Suavidad del borde',
+  'How soft the edge of the cut-out is': 'Qué tan suave es el borde del recorte',
+  Apply: 'Aplicar',
+  'Use the cut-out on this picture (you can come back to refine it)': 'Usa el recorte en esta imagen (puedes volver a afinarlo)',
+  'Download the cut-out as a transparent PNG': 'Descarga el recorte como PNG transparente',
+  'Restore original': 'Restaurar original',
+  'Bring back the picture as it was before removing the background': 'Recupera la imagen como estaba antes de quitar el fondo',
+  'Preparing the cut-out model…': 'Preparando el modelo de recorte…',
+  'Finding the subject…': 'Buscando el sujeto…',
+  'Could not load the cut-out model (check your internet connection). Switched to “By brightness”.':
+    'No se pudo cargar el modelo de recorte (revisa tu conexión a internet). Se cambió a «Por brillo».',
+  'The cut-out is applied to this picture in place. You can come back to refine it, or restore the original. The model (44 MB) downloads once and runs on your computer: the picture is never uploaded.':
+    'El recorte se aplica a esta imagen en el mismo sitio. Puedes volver a afinarlo o restaurar la original. El modelo (44 MB) se descarga una sola vez y funciona en tu computador: la imagen nunca se sube.',
+  '“Smart (AI)” finds the main subject, best for photos. For white-on-black artwork, use “By brightness”.':
+    '«Inteligente (IA)» encuentra el sujeto principal, ideal para fotos. Para obras blancas sobre negro usa «Por brillo».',
+  'Background removed': 'Fondo quitado',
+  'no background': 'sin fondo',
+
+  // ---- crop ----
+  Crop: 'Recortar',
+  'Crop this picture (you can also save the crop as a PNG)': 'Recorta esta imagen (también puedes guardar el recorte como PNG)',
+  'Crop shape picture': 'Recortar la imagen de la forma',
+  'Crop selection': 'Selección de recorte',
+  Free: 'Libre',
+  Print: 'Impresión',
+  Proportions: 'Proporciones',
+  'Same proportions as the print': 'Mismas proporciones que la impresión',
+  'Same proportions as this shape': 'Mismas proporciones que esta forma',
+  Close: 'Cerrar',
+  'Reset selection': 'Restablecer selección',
+  'Save PNG': 'Guardar PNG',
+  'Download the selected area as a PNG': 'Descarga el área seleccionada como PNG',
+  Cancel: 'Cancelar',
+  'Apply crop': 'Aplicar recorte',
+  'Drag on the picture to draw a new selection, drag the box to move it, drag the handles to resize. Arrow keys nudge it, Esc closes.':
+    'Arrastra sobre la imagen para dibujar una selección nueva, arrastra el recuadro para moverlo y los tiradores para cambiar su tamaño. Las flechas lo ajustan, Esc cierra.',
+  'This picture was cropped before: the original is shown, so you can widen the selection again.':
+    'Esta imagen ya se recortó antes: se muestra la original, así que puedes ampliar la selección de nuevo.',
+  'Pictures are kept in grayscale (what the cyanotype uses), so the saved PNG is grayscale too.':
+    'Las imágenes se guardan en escala de grises (lo que usa la cianotipia), así que el PNG guardado también es en grises.',
+  'The code generator will be frozen into a picture. Press Code to bring the live generator back.':
+    'El generador de código se congelará en una imagen. Pulsa Código para recuperar el generador en vivo.',
+  'Original picture restored': 'Imagen original restaurada',
+  cropped: 'recortada',
 
   // ---- start screen, tools, status ----
   'Start a creation': 'Empieza una creación',
@@ -316,6 +396,13 @@ const strings = {
   'Simulated final Prussian-blue print': 'Impresión final simulada en azul de Prusia',
   'Format preset': 'Formato predefinido',
   'Custom (cm)': 'Personalizado (cm)',
+  'A5 (14.8 × 21 cm)': 'A5 (14.8 × 21 cm)',
+  '5 × 7 in @ 300 dpi': '5 × 7 in @ 300 dpi',
+  Format: 'Formato',
+  Portrait: 'Vertical',
+  Landscape: 'Horizontal',
+  'Portrait (vertical)': 'Vertical',
+  'Landscape (horizontal)': 'Horizontal',
   '12 × 12 in @ 300 dpi': '12 × 12 pulg @ 300 dpi',
   '8 × 10 in @ 300 dpi (4:5)': '8 × 10 pulg @ 300 dpi (4:5)',
   '11 × 14 in @ 300 dpi': '11 × 14 pulg @ 300 dpi',
@@ -474,6 +561,12 @@ const patterns = [
   [/^Code: (.+?)( \(live\))?$/, (m, T) => `Código: ${T(m[1])}${m[2] ? ' (en vivo)' : ''}`],
   [/^AI: (.+)$/, (m) => `IA: ${m[1]}`],
   [/^Picture (A|B)$/, (m) => `Imagen ${m[1]}`],
+  [/^Crop picture (A|B)$/, (m) => `Recortar imagen ${m[1]}`],
+  [/^Keeping (\d+)% of the picture$/, (m) => `Conservando el ${m[1]}% de la imagen`],
+  [/^Downloading the cut-out model… (\d+) of (\d+) MB \(first time only\)$/, (m) => `Descargando el modelo de recorte… ${m[1]} de ${m[2]} MB (solo la primera vez)`],
+  [/^Selection: (\d+) × (\d+) px$/, (m) => `Selección: ${m[1]} × ${m[2]} px`],
+  [/^Cropped to (\d+) × (\d+) px$/, (m) => `Recortada a ${m[1]} × ${m[2]} px`],
+  [/^PNG saved · (.+)$/, (m) => `PNG guardado · ${m[1]}`],
   [/^Overlay (\d+)$/, (m) => `Forma ${m[1]}`],
   [/^Editing overlay (\d+)$/, (m) => `Editando forma ${m[1]}`],
   [/^(.+) \(no picture\)$/, (m, T) => `${T(m[1])} (sin imagen)`],

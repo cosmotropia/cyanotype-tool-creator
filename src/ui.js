@@ -1,4 +1,4 @@
-import { GROUPS, SECTIONS, SELECTS, PRESETS, FORMS } from './params.js'
+import { GROUPS, SECTIONS, SELECTS, PRESETS, FORMS, PNG_CUT } from './params.js'
 import { isUploadableImage } from './source.js'
 import { AI_PROMPTS, AI_ENABLED, AI_SOON_TEXT, AI_SOON_SHORT } from './openai.js'
 import { createFramesPanel } from './framesui.js'
@@ -28,6 +28,8 @@ const ICONS = {
   undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
   redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/>',
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  portrait: '<rect x="7" y="3" width="10" height="18" rx="1.5"/>',
+  landscape: '<rect x="3" y="7" width="18" height="10" rx="1.5"/>',
   spark: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>',
 }
 function ico(name) {
@@ -254,6 +256,16 @@ export function createUI(root, params, h) {
       el('button', { type: 'button', 'data-act': 'sample', text: 'Sample', onclick: () => h.onImage(id, 'sample') }),
       el('button', { type: 'button', 'data-act': 'code', text: codeLabel, title: id === 'A' ? 'Use the code generator as the source' : 'Snapshot of the code generator', onclick: () => h.onImage(id, 'code') }),
     ]
+    // Remove background: cut the subject out, applied to this picture in place (can also be saved as a transparent PNG).
+    const bgBtn = el('button', {
+      type: 'button',
+      'data-act': 'bg',
+      text: 'Remove background',
+      title: 'Remove the background of this picture and keep the subject (you can also save it as a transparent PNG)',
+      onclick: () => h.onImage(id, 'bg'),
+    })
+    bgBtn.disabled = true
+    buttons.push(bgBtn)
     if (id === 'B') buttons.push(el('button', { type: 'button', text: 'Clear', onclick: () => h.onImage(id, 'clear') }))
     const box = el('div', { class: 'slot' }, [
       thumb,
@@ -271,7 +283,7 @@ export function createUI(root, params, h) {
       const f = e.dataTransfer?.files?.[0]
       if (isUploadableImage(f)) h.onImage(id, 'file', f)
     })
-    slots[id] = { thumb, name }
+    slots[id] = { thumb, name, bg: bgBtn }
     return box
   }
 
@@ -378,8 +390,22 @@ export function createUI(root, params, h) {
   // ===================== 5. Export =====================
   const status = el('div', { class: 'status' })
   const progress = el('progress', { max: 1, value: 0, hidden: '' })
-  const exportBtn = el('button', { type: 'button', class: 'primary', text: 'Export PNG', onclick: () => h.onExport('png') })
-  const exportTiffBtn = el('button', { type: 'button', class: 'primary', text: 'Export TIFF', onclick: () => h.onExport('tiff') })
+  const exportBtn = el('button', {
+    type: 'button',
+    class: 'primary',
+    text: 'Export cyanotype',
+    title: 'Saves the print (follows “Export content”: digital negative, original artwork or cyanotype simulation) as a PNG',
+    onclick: () => h.onExport('png'),
+  })
+  const exportTiffBtn = el('button', {
+    type: 'button',
+    class: 'primary',
+    text: 'Export TIFF',
+    title: 'The same print as a TIFF',
+    onclick: () => h.onExport('tiff'),
+  })
+  const TRANSPARENT_TIP = 'PNG with the main background removed: the black of the artwork (the white of the digital negative) becomes transparent'
+  const exportAlphaBtn = el('button', { type: 'button', class: 'primary', text: 'Export transparent PNG', title: TRANSPARENT_TIP, onclick: () => h.onExport('png-alpha') })
   const exportInfo = el('div', { class: 'hint' })
   const progressLabel = el('div', { class: 'hint', hidden: '' })
   const exportBlock = el('div', { class: 'block' }, [
@@ -390,6 +416,9 @@ export function createUI(root, params, h) {
     select('dpi', 'info'),
     select('bitDepth', 'info'),
     el('div', { class: 'row2' }, [exportBtn, exportTiffBtn]),
+    el('div', { class: 'row2' }, [exportAlphaBtn]),
+    slider(PNG_CUT, 'info'),
+    el('div', { class: 'hint', text: 'Transparent PNG: the background is removed, so dark areas of a picture become see-through too. It follows “Export content” (the cyanotype simulation exports the original artwork).' }),
     progress,
     progressLabel,
     exportInfo,
@@ -438,6 +467,7 @@ export function createUI(root, params, h) {
   const stageEl = doc.getElementById('stage')
   const topProgress = el('div', { class: 'toprogress', hidden: '' }, [el('i')])
   const menuPng = el('button', { type: 'button', class: 'menuitem', role: 'menuitem', onclick: () => h.onExport('png') }, [el('span', { text: 'Export PNG' }), el('kbd', { text: 'E' })])
+  const menuAlpha = el('button', { type: 'button', class: 'menuitem', role: 'menuitem', title: TRANSPARENT_TIP, onclick: () => h.onExport('png-alpha') }, [el('span', { text: 'Export transparent PNG' })])
   const menuTiff = el('button', { type: 'button', class: 'menuitem', role: 'menuitem', onclick: () => h.onExport('tiff') }, [el('span', { text: 'Export TIFF' })])
   const menuPrint = el('button', {
     type: 'button',
@@ -448,7 +478,7 @@ export function createUI(root, params, h) {
       exportBlock.scrollIntoView({ block: 'start' })
     },
   }, [el('span', { text: 'Print size & format…' })])
-  const exportBtns = [exportBtn, exportTiffBtn, menuPng, menuTiff]
+  const exportBtns = [exportBtn, exportTiffBtn, exportAlphaBtn, menuPng, menuAlpha, menuTiff]
   const openBtn = el('button', { type: 'button', class: 'topbtn', title: 'Open a picture as picture A (JPEG, PNG, WebP, HEIC…)', onclick: () => slotFiles.A.click() }, [ico('open'), el('span', { text: 'Open' })])
   const settingsMenu = menu('sliders', 'Settings', [
     el('button', { type: 'button', class: 'menuitem', role: 'menuitem', title: 'Copy every setting (⌘C) so you can paste it back later', onclick: () => h.onCopySettings() }, [el('span', { text: 'Copy settings' }), el('kbd', { text: '⌘C' })]),
@@ -480,7 +510,7 @@ export function createUI(root, params, h) {
     redoBtn,
     el('span', { class: 'topdivider', 'aria-hidden': 'true' }),
     openBtn,
-    menu('download', 'Export', [menuPng, menuTiff, el('div', { class: 'menusep' }), menuPrint]),
+    menu('download', 'Export', [menuPng, menuAlpha, menuTiff, el('div', { class: 'menusep' }), menuPrint]),
     langMenu,
     settingsMenu,
   )
@@ -497,6 +527,63 @@ export function createUI(root, params, h) {
     }
   }
   applyForm(params.form)
+
+  // ===================== Format bar over the preview =====================
+  // Page format, size in cm and portrait / landscape, right on the preview. Same params as the Print export block
+  // (printW / printH / size), so the preview frame and the exported file always have the chosen space.
+  const addSync = (key, fn) => {
+    const prev = widgets[key]?.sync
+    widgets[key] = { sync: () => (prev?.(), fn()) }
+  }
+  const barSel = el('select', { 'aria-label': 'Format preset' }, SELECTS.size.options.map(([v, label]) => el('option', { value: v, text: label })))
+  barSel.addEventListener('change', () => {
+    params.size = barSel.value
+    h.onParam('size', 'info')
+  })
+  addSync('size', () => (barSel.value = params.size))
+  const barNum = (key, label) => {
+    const input = el('input', { type: 'number', min: 2, max: 300, step: 0.1, value: params[key], 'aria-label': label, title: label })
+    input.addEventListener('change', () => {
+      params[key] = Math.min(300, Math.max(2, parseFloat(input.value) || 2))
+      input.value = params[key]
+      h.onParam(key, 'info')
+    })
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') input.blur()
+    })
+    addSync(key, () => (input.value = params[key]))
+    return input
+  }
+  const barW = barNum('printW', 'Width (cm)')
+  const barH = barNum('printH', 'Height (cm)')
+  const swapSizes = () => {
+    ;[params.printW, params.printH] = [params.printH, params.printW]
+    widgets.printW.sync()
+    widgets.printH.sync()
+    h.onParam('printW', 'info')
+  }
+  const orientBtn = (kind, label, title) =>
+    el('button', { type: 'button', class: 'orient', 'data-o': kind, 'aria-label': label, title, onclick: () => {
+      if (!orientBtns[kind].classList.contains('on')) swapSizes()
+    } }, [ico(kind)])
+  const orientBtns = {
+    portrait: orientBtn('portrait', 'Portrait', 'Portrait (vertical)'),
+    landscape: orientBtn('landscape', 'Landscape', 'Landscape (horizontal)'),
+  }
+  const syncOrient = () => {
+    orientBtns.portrait.classList.toggle('on', params.printH > params.printW)
+    orientBtns.landscape.classList.toggle('on', params.printW > params.printH)
+  }
+  addSync('printW', syncOrient)
+  addSync('printH', syncOrient)
+  syncOrient()
+  stageEl?.append(
+    el('div', { class: 'formatbar', role: 'group', 'aria-label': 'Format' }, [
+      barSel,
+      el('span', { class: 'dims' }, [barW, el('span', { class: 'x', text: '×' }), barH, el('span', { class: 'cm', text: 'cm' })]),
+      el('span', { class: 'orients' }, [orientBtns.portrait, orientBtns.landscape]),
+    ]),
+  )
 
   return {
     set(key, value) {
@@ -526,6 +613,7 @@ export function createUI(root, params, h) {
       const s = slots[id]
       if (thumbUrl) s.thumb.src = thumbUrl
       else s.thumb.removeAttribute('src')
+      s.bg.disabled = !thumbUrl // nothing to cut out until the slot holds a picture
       s.name.textContent = label
     },
     setAI({ configured, available, model }) {

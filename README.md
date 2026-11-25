@@ -80,6 +80,20 @@ Three previews (keys `1` `2` `3`):
 
 *Reset cyanotype settings* returns the panel to a neutral negative.
 
+## Remove background
+
+Every picture (A, B and the pictures inside shapes) has a **Remove background** button. It works in place, like an
+editing app: the shape / picture updates with the cut-out, the original is kept, and you can reopen the dialog to refine
+it or press *Restore original*. *Save PNG* additionally downloads the cut-out as a transparent PNG.
+
+- **Smart (AI)** finds the main subject with [`briaai/RMBG-1.4`](https://huggingface.co/briaai/RMBG-1.4) running in the
+  browser (`@huggingface/transformers`, ONNX / WASM). The model (44 MB) is downloaded once and cached by the browser;
+  pictures are never uploaded. Its licence is free for **personal / non-commercial** use only: for commercial use, switch
+  `BG_MODEL` in `src/bgremove.js` to an MIT / Apache model such as `onnx-community/BiRefNet_lite-ONNX` (bigger download).
+- **By brightness** makes dark areas transparent (white-on-black artwork), with no download.
+- In a shape the cut-out is a real mask, so the layers below show through. For pictures A / B (black = nothing) the
+  subject is kept over black.
+
 ## Print export
 
 - Set the print size in **cm** (or pick a format preset) and **300 / 600 dpi**; pixels = cm ÷ 2.54 × dpi. The image is

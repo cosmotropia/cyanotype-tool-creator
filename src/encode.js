@@ -1,5 +1,5 @@
 // Image encoders for print export. They write only pixels (+ the dpi tag): no borders, UI or watermark.
-//   encodePNG  : 8/16-bit grayscale or 8-bit RGB, pHYs dpi, zlib via CompressionStream
+//   encodePNG  : 8/16-bit grayscale (optionally + alpha) or 8-bit RGB(A), pHYs dpi, zlib via CompressionStream
 //   encodeTIFF : 8/16-bit grayscale or 8-bit RGB, uncompressed baseline TIFF, dpi in the tags
 
 import { clamp } from './math.js'
@@ -15,6 +15,26 @@ export function toGray8(f) {
 export function toGray16(f) {
   const out = new Uint16Array(f.length)
   for (let i = 0; i < f.length; i++) out[i] = Math.round(clamp(f[i], 0, 1) * 65535)
+  return out
+}
+
+/**
+ * Float map (0..1) -> 8-bit gray + alpha (interleaved) with the main background removed.
+ * The map is "ink on a background": bright strokes on black (invert = false, ink drawn white) or dark strokes on white
+ * (invert = true, the digital negative, ink drawn black). The distance from the background becomes the alpha, so over the
+ * original background the result looks exactly like the source and everywhere else the background is see-through.
+ * `cut` (0..0.9) makes the faintest tones fully transparent, to clean a noisy background.
+ */
+export function toInkAlpha8(f, { invert = false, cut = 0 } = {}) {
+  const out = new Uint8Array(f.length * 2)
+  const ink = invert ? 0 : 255
+  const c = clamp(cut, 0, 0.9)
+  const k = 1 / (1 - c)
+  for (let i = 0, o = 0; i < f.length; i++, o += 2) {
+    const v = clamp(invert ? 1 - f[i] : f[i], 0, 1)
+    out[o] = ink
+    out[o + 1] = Math.round(clamp((v - c) * k, 0, 1) * 255)
+  }
   return out
 }
 
@@ -54,7 +74,7 @@ async function deflate(bytes) {
 
 /**
  * data: Uint8Array (depth 8) or Uint16Array (depth 16), row-major, channels interleaved.
- * channels: 1 (gray) or 3 (RGB).
+ * channels: 1 (gray), 2 (gray + alpha), 3 (RGB) or 4 (RGBA).
  */
 export async function encodePNG({ data, width, height, channels, depth, dpi }) {
   const bytesPerSample = depth / 8
@@ -86,7 +106,7 @@ export async function encodePNG({ data, width, height, channels, depth, dpi }) {
   dv.setUint32(0, width)
   dv.setUint32(4, height)
   ihdr[8] = depth
-  ihdr[9] = channels === 1 ? 0 : 2
+  ihdr[9] = { 1: 0, 2: 4, 3: 2, 4: 6 }[channels] // gray, gray + alpha, RGB, RGBA
   const phys = new Uint8Array(9)
   const pv = new DataView(phys.buffer)
   const ppm = Math.round(dpi / 0.0254)

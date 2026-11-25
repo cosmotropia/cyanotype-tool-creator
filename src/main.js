@@ -9,12 +9,14 @@ import { sourceFromGray, sourceFromFile, sourceFromUrl, thumbUrl } from './sourc
 import { samplePicture, filamentLayer, composeBase, postProcess, processLayers, floatToImageData, imageDataToCanvas } from './pipeline.js'
 import { aiStatus, aiGenerate, aiEdit, REFINE_PROMPT, CYANO_SUFFIX, AI_ENABLED, AI_SOON_SHORT } from './openai.js'
 import { createUI } from './ui.js'
+import { openBgRemove } from './bgdialog.js'
+import { createGuide } from './guide.js'
 import { clamp } from './math.js'
-import { encodePNG, encodeTIFF, toGray8, toGray16 } from './encode.js'
+import { encodePNG, encodeTIFF, toGray8, toGray16, toInkAlpha8 } from './encode.js'
 import { simulatePrint } from './cyanotype.js'
 import { createDataPanel } from './datapanel.js'
 import { applyMeasures } from './measure.js'
-import { frameImages, newFrame, sanitizeFrame, sanitizeFrames, hitFrame, FRAME_LAYOUTS } from './frames.js'
+import { frameImages, newFrame, sanitizeFrame, sanitizeFrames, hitFrame, FRAME_LAYOUTS, FRAME_SHAPES } from './frames.js'
 
 const params = defaults()
 
@@ -151,7 +153,13 @@ for (const label of ['Code', 'Upload', 'Sample']) {
     }),
   )
 }
-// Shapes on the plain black background: no picture needed. Opens the Layers tab and adds a solid shape there.
+// Shapes on the plain black background: no picture needed. Opens the Layers tab and adds a solid shape there,
+// in the shape picked next to the button (the Layers tab picker is set to the same one).
+const startShape = document.createElement('select')
+startShape.className = 'emptyshape'
+startShape.setAttribute('aria-label', 'Shape')
+startShape.title = 'Shape to start with'
+for (const [value, text] of FRAME_SHAPES) startShape.append(Object.assign(document.createElement('option'), { value, textContent: text }))
 startRow.append(
   Object.assign(document.createElement('button'), {
     type: 'button',
@@ -160,9 +168,12 @@ startRow.append(
     onclick: () => {
       const tabs = panel.querySelectorAll('.tab')
       tabs[tabs.length - 1]?.click() // Layers
+      const picker = panel.querySelector('.shape-new')
+      if (picker) picker.value = startShape.value // setting the value does not fire its change handler
       panel.querySelector('.solid-add')?.click() // onAdd(shape, 'solid') switches the preview to the black background
     },
   }),
+  startShape,
 )
 // Viewfinder marks around an empty frame (decoration only).
 const emptyFrame = Object.assign(document.createElement('div'), { className: 'emptyframe' })
@@ -189,7 +200,12 @@ const frameDims = () => [params.printW, params.printH]
 const parseSize = () => [cmToPx(params.printW, params.dpi), cmToPx(params.printH, params.dpi)]
 const syncCmFromSize = () => {
   if (params.size === 'custom') return
-  ;[params.printW, params.printH] = sizeToCm(params.size)
+  let [w, h] = sizeToCm(params.size)
+  // A format is the same in portrait and landscape: keep the orientation the user already has.
+  const landscape = params.printW > params.printH
+  const portrait = params.printW < params.printH
+  if ((landscape && w < h) || (portrait && w > h)) [w, h] = [h, w]
+  ;[params.printW, params.printH] = [w, h]
   ui?.refresh()
 }
 const nextFrame = () => new Promise((r) => setTimeout(r, 0))
@@ -263,6 +279,62 @@ function setSlot(id, slot) {
   updateEmptyState()
 }
 
+// ---- remove background (bgdialog.js): pictures A / B and the pictures cut into shapes ----
+// The cut-out is applied in place and stays editable: the picture keeps the original (`bgOrig`) and the model's mask
+// (`bgMatte`), so reopening the dialog is instant and "Restore original" brings the plain picture back.
+const NOBG = ' · no background'
+const uncutLabel = (label) => String(label || '').replace(NOBG, '')
+
+// Pictures A / B are plain grayscale maps with black = nothing, so the cut-out is baked in: subject over black.
+function bakeCut(base, alpha) {
+  const gray = new Float32Array(base.gray.length)
+  for (let i = 0; i < gray.length; i++) gray[i] = base.gray[i] * alpha[i]
+  return gray
+}
+
+async function removeBgSlot(id) {
+  const s = slots[id]
+  if (!s || s.kind === 'none') return
+  const live = s.kind === 'code' // the live generator is frozen into a picture when the cut-out is applied
+  const src = live ? renderCode(CODE_FULL_SIDE) : s.src
+  if (!src) return
+  const label0 = live ? 'Code: ' + FORM_LABEL[params.form] : s.label
+  const out = await openBgRemove({
+    src,
+    title: 'Remove background',
+    name: uncutLabel(label0),
+    note: live ? 'The code generator will be frozen into a picture. Press Code to bring the live generator back.' : '',
+  })
+  if (!out) return
+  const label = uncutLabel(label0) + (out.kind === 'apply' ? NOBG : '')
+  const pic =
+    out.kind === 'apply'
+      ? { ...out.base, gray: bakeCut(out.base, out.alpha), label, bgOrig: out.base, bgMatte: out.matte, bgState: out.state }
+      : { ...out.base, label }
+  setSlot(id, { ...s, kind: live ? 'upload' : s.kind, src: pic, label })
+  ui.refresh()
+  request('base')
+  ui.setStatus(out.kind === 'apply' ? 'Background removed' : 'Original picture restored')
+}
+
+// In a shape the cut-out is a real mask: what was background lets the layers below show through.
+async function removeBgShapePicture(frameId) {
+  const cur = frameImages.get(frameId)
+  if (!cur) return
+  const out = await openBgRemove({ src: cur, title: 'Remove background', name: uncutLabel(cur.label) })
+  if (!out) return
+  const label = uncutLabel(cur.label) + (out.kind === 'apply' ? NOBG : '')
+  frameImages.set(
+    frameId,
+    out.kind === 'apply'
+      ? { ...out.base, alpha: out.alpha, label, bgOrig: out.base, bgMatte: out.matte, bgState: out.state }
+      : { ...out.base, label },
+  )
+  ui.rebuildFrames()
+  request('base')
+  ui.setStatus(out.kind === 'apply' ? 'Background removed' : 'Original picture restored')
+}
+
 // Start with nothing loaded: the user picks Upload, Sample or Code. Params get the Lotus look that Code uses.
 function startEmpty() {
   Object.assign(params, PRESETS['Lotus bloom'])
@@ -317,6 +389,7 @@ const ui = createUI(panel, params, {
   onRandomize: randomize,
   async onImage(id, action, file) {
     try {
+      if (action === 'bg') return await removeBgSlot(id)
       if (action === 'file') {
         const src = await sourceFromFile(file)
         setSlot(id, { kind: 'upload', src, label: file.name })
@@ -373,6 +446,7 @@ const ui = createUI(panel, params, {
   },
   frames: {
     onChange: () => request('base'),
+    onSelect: () => showGuide(true), // picked in the list: show its guide on the preview
     onAdd(shape, fill = 'photo') {
       const n = params.frames.length
       const f = newFrame(params, shape, { x: ((n % 5) - 2) * 2, y: ((n % 5) - 2) * 1.5, fill })
@@ -381,6 +455,7 @@ const ui = createUI(panel, params, {
       if (fill === 'solid' && slots.A.kind === 'none') ui.set('preview', 'mono')
       ui.openFrame(f.id)
       ui.rebuildFrames()
+      showGuide(true) // the new shape comes selected, with its handles
       request('base')
       ui.setStatus(
         fill === 'solid'
@@ -415,11 +490,13 @@ const ui = createUI(panel, params, {
       params.frames.splice(i + 1, 0, copy)
       ui.openFrame(copy.id)
       ui.rebuildFrames()
+      showGuide(true)
       request('base')
     },
     async onImage(id, action, file) {
       try {
         let src
+        if (action === 'bg') return await removeBgShapePicture(id)
         if (action === 'file') src = await sourceFromFile(file, { edgeFade: false })
         else if (action === 'sample') {
           const name = SAMPLE_PRESETS[frameSampleCursor++ % SAMPLE_PRESETS.length]
@@ -505,6 +582,7 @@ function updateExportInfo() {
   const what =
     params.output === 'negative' ? 'digital negative' : params.output === 'simulation' ? 'cyanotype simulation (RGB)' : 'original artwork'
   const depth = params.output === 'simulation' ? '8-bit RGB' : `${params.bitDepth}-bit gray`
+  // (the transparent PNG is always 8-bit gray + alpha)
   ui.setExportInfo(
     `${params.printW} × ${params.printH} cm at ${dpi} dpi → ${w} × ${h} px · ${((w * h) / 1e6).toFixed(1)} MP · ${what}, ${depth}` +
       (tooBig ? ` — over the ${MAX_EXPORT_PIXELS / 1e6} MP limit: reduce the size or the dpi` : ''),
@@ -537,6 +615,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'e' || e.key === 'E') exportImage('png')
   else if (e.key === 'h' || e.key === 'H') setHand(!hand)
   else if ((e.key === 'o' || e.key === 'O') && params.frames.length) setOverlayTool(!ovMode)
+  else if (e.key === 'Escape' && guide?.isVisible()) showGuide(false) // deselect
   else if (e.key === '1' || e.key === '2' || e.key === '3') {
     ui.set('preview', ['mono', 'negative', 'cyanotype'][Number(e.key) - 1])
     request('post')
@@ -607,6 +686,7 @@ function present() {
   const t0 = performance.now()
   updateEmptyState()
   updateOverlayTool()
+  updateGuide()
   const img = postProcess(params, cache.acc, cache.W, cache.H, previewMode())
   view = { canvas: imageDataToCanvas(img), draft: cache.draft }
   sketch?.redraw()
@@ -699,7 +779,11 @@ async function exportImage(format = 'png') {
   }
   exporting = true
   const dpi = Number(params.dpi)
-  const mode = OUTPUT_MODE[params.output] || 'negative'
+  // 'png-alpha': PNG with the main background removed (transparent). The cyanotype simulation has no single background
+  // to remove, so that content falls back to the original artwork.
+  const transparent = format === 'png-alpha'
+  if (transparent) format = 'png'
+  const mode = transparent ? (params.output === 'negative' ? 'negative' : 'mono') : OUTPUT_MODE[params.output] || 'negative'
   try {
     let f = await renderFloat(W, H, mode, async (frac, label) => {
       ui.setProgress(frac, label)
@@ -710,7 +794,9 @@ async function exportImage(format = 'png') {
 
     // Pixels only: no UI, borders or watermark.
     let img
-    if (mode === 'cyanotype') {
+    if (transparent) {
+      img = { data: toInkAlpha8(f, { invert: mode === 'negative', cut: Number(params.pngCut) || 0 }), channels: 2, depth: 8 }
+    } else if (mode === 'cyanotype') {
       const rgb = new Uint8Array(W * H * 3)
       simulatePrint(f, rgb, 3)
       img = { data: rgb, channels: 3, depth: 8 }
@@ -722,7 +808,9 @@ async function exportImage(format = 'png') {
     f = null
     const spec = { ...img, width: W, height: H, dpi }
     const blob = format === 'tiff' ? encodeTIFF(spec) : await encodePNG(spec)
-    const tag = params.output === 'negative' ? 'digital-negative' : params.output === 'simulation' ? 'cyanotype-simulation' : 'original'
+    const tag = transparent
+      ? (mode === 'negative' ? 'digital-negative' : 'original') + '-transparent'
+      : params.output === 'negative' ? 'digital-negative' : params.output === 'simulation' ? 'cyanotype-simulation' : 'original'
     download(blob, `cyanotype-seed${params.seed}-${tag}-${params.printW}x${params.printH}cm-${dpi}dpi-${W}x${H}.${format}`)
   } catch (err) {
     console.error(err)
@@ -758,6 +846,7 @@ function fitCanvas() {
     sketch.resizeCanvas(w, h)
     sketch.redraw()
   }
+  requestAnimationFrame(updateGuide) // the guide sits over the canvas, wherever the layout put it
 }
 
 // ---- Hand tool: drag on the preview to move the picture (xPanX / xPanY). Works for pictures and code sources. ----
@@ -781,6 +870,17 @@ function setOverlayTool(on) {
   overlayBtn.classList.toggle('on', on)
   overlayBtn.setAttribute('aria-pressed', String(on))
   stage.classList.toggle('hand', on || hand)
+}
+
+// ---- Selection guide (guide.js): box + handles around the selected shape, to resize / stretch / rotate it ----
+let guide = null
+const guidedFrame = () => {
+  const f = selectedOverlay()
+  return f && f.visible !== false && (f.fill === 'solid' || frameImages.has(f.id)) ? f : null // only shapes that are drawn
+}
+const updateGuide = () => guide?.update()
+function showGuide(on) {
+  guide?.setVisible(on)
 }
 
 // The tool only makes sense while there is an overlay to move.
@@ -838,24 +938,41 @@ const startSketch = () =>
       // Drag / wheel act on the current source: camera for code, parallax and zoom for pictures.
       let drag = null
       let grab = null // the overlay being dragged with the Hand / Overlay tool
+      guide = createGuide({
+        stage,
+        canvas: cnv.elt,
+        params,
+        frame: guidedFrame,
+        onChange: () => {
+          ui.syncFrames() // the editor's sliders follow
+          request('base')
+        },
+        onStart: () => stage.classList.add('panning'),
+        onEnd: () => stage.classList.remove('panning'),
+      })
+      let downAt = null // where a press began on empty background (a click there hides the guide)
       cnv.elt.addEventListener('pointerdown', (e) => {
         drag = { x: e.clientX, y: e.clientY }
         grab = null
+        downAt = null
         cnv.elt.setPointerCapture(e.pointerId)
-        if (hand || ovMode) {
-          stage.classList.add('panning')
-          // Grab whatever shape is under the cursor (top-most first) and select it; otherwise the Hand moves the picture.
-          const r = cnv.elt.getBoundingClientRect()
-          const k = params.printH / r.height // cm per screen pixel
-          const hit = hitFrame(params.frames, (e.clientX - r.left - r.width / 2) * k, (e.clientY - r.top - r.height / 2) * k)
-          if (hit) {
-            grab = hit
-            if (ui.selectedFrame() !== hit.id) {
-              ui.openFrame(hit.id)
-              ui.rebuildFrames()
-            }
-          } else if (ovMode) grab = selectedOverlay() || null // Overlay tool: keep moving the selected one
+        // Pressing a shape (top-most first) selects it and shows its guide; dragging then moves it, in every tool.
+        // Pressing the background: the Hand moves the picture, the Overlay tool keeps the selected shape, otherwise the camera.
+        const r = cnv.elt.getBoundingClientRect()
+        const k = params.printH / r.height // cm per screen pixel
+        const hit = hitFrame(params.frames, (e.clientX - r.left - r.width / 2) * k, (e.clientY - r.top - r.height / 2) * k)
+        if (hit) {
+          grab = hit
+          if (ui.selectedFrame() !== hit.id) {
+            ui.openFrame(hit.id)
+            ui.rebuildFrames()
+          }
+          showGuide(true)
+        } else {
+          if (ovMode) grab = selectedOverlay() || null // Overlay tool: keep moving the selected one
+          downAt = { x: e.clientX, y: e.clientY }
         }
+        if (hand || ovMode || grab) stage.classList.add('panning')
       })
       cnv.elt.addEventListener('pointermove', (e) => {
         if (!drag) return
@@ -868,6 +985,7 @@ const startSketch = () =>
           f.x = clamp(Math.round((f.x + dx * k) * 100) / 100, -params.printW, params.printW)
           f.y = clamp(Math.round((f.y + dy * k) * 100) / 100, -params.printH, params.printH)
           ui.syncFrames()
+          updateGuide()
           request('base')
         } else if (ovMode) {
           // Overlay tool with nothing to move
@@ -887,7 +1005,10 @@ const startSketch = () =>
           request('base')
         }
       })
-      const end = () => {
+      const end = (e) => {
+        // A plain click on the empty background (no drag) deselects: the guide goes away.
+        if (downAt && e?.type === 'pointerup' && !hand && !ovMode && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 4) showGuide(false)
+        downAt = null
         drag = null
         grab = null
         stage.classList.remove('panning')
@@ -902,6 +1023,7 @@ const startSketch = () =>
           if (ov) {
             ov.scale = clamp(Math.round(ov.scale * Math.exp(-e.deltaY * 0.001) * 1000) / 1000, 0.05, 3)
             ui.syncFrames()
+            updateGuide()
             request('base')
           } else if (isCode()) {
             ui.set('zoom', clamp(params.zoom * Math.exp(-e.deltaY * 0.001), 0.4, 2.5))

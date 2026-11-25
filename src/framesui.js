@@ -45,7 +45,16 @@ export function createFramesPanel(params, h) {
 
   const list = el('div', { class: 'frameitems' })
   const editor = el('div', { class: 'frameeditor' })
-  const shapeSel = el('select', { 'aria-label': 'Shape of the new overlay' }, FRAME_SHAPES.map(([v, t]) => el('option', { value: v, text: t })))
+  // One shape picker for the whole panel: it shows and changes the shape of the overlay you are editing, and it is the
+  // shape of the next one you add. (Picking an overlay in the list moves it to that overlay's shape.)
+  const shapeSel = el('select', { class: 'shape-new', 'aria-label': 'Shape' }, FRAME_SHAPES.map(([v, t]) => el('option', { value: v, text: t })))
+  shapeSel.addEventListener('change', () => {
+    const f = params.frames.find((x) => x.id === selected)
+    if (!f) return // nothing selected: it only sets the shape of the next overlay
+    f.shape = shapeSel.value
+    h.onChange()
+    rebuild() // the list and the editor show the new shape
+  })
   const layoutSel = el('select', { 'aria-label': 'Ready-made layouts' }, [el('option', { value: '', text: 'Ready-made layouts…' })].concat(
     Object.keys(FRAME_LAYOUTS).map((n) => el('option', { value: n, text: n })),
   ))
@@ -57,7 +66,7 @@ export function createFramesPanel(params, h) {
 
   const root = el('div', { class: 'block flat framesblock' }, [
     el('div', { class: 'hint', text: 'Shapes sit on top of the black background or the picture. A solid shape needs no picture: it is one flat tone. A photo shape shows a picture cut into the shape.' }),
-    el('div', { class: 'row2' }, [shapeSel]),
+    el('label', { class: 'ctl', title: 'The shape of the selected overlay, and of the next one you add' }, [el('span', { class: 'row', text: 'Shape' }), shapeSel]),
     el('div', { class: 'row2 wrap' }, [
       el('button', { type: 'button', class: 'primary solid-add', text: '+ Solid shape', title: 'A flat tone shape: no picture needed', onclick: () => h.onAdd(shapeSel.value, 'solid') }),
       el('button', { type: 'button', text: '+ Photo shape', title: 'A shape cut from a picture (give it one below)', onclick: () => h.onAdd(shapeSel.value, 'photo') }),
@@ -128,10 +137,18 @@ export function createFramesPanel(params, h) {
       if (file.files?.[0]) h.onImage(f.id, 'file', file.files[0])
       file.value = ''
     })
+    const bgBtn = el('button', {
+      type: 'button',
+      text: 'Remove background',
+      title: 'Remove the background of this picture and keep the subject: the shape updates in place (you can also save it as a transparent PNG)',
+      onclick: () => h.onImage(f.id, 'bg'),
+    })
+    bgBtn.disabled = !src // needs a picture first
     const buttons = el('div', { class: 'row2 tight wrap' }, [
       el('button', { type: 'button', text: 'Upload', onclick: () => file.click() }),
       el('button', { type: 'button', text: 'Sample', onclick: () => h.onImage(f.id, 'sample') }),
       el('button', { type: 'button', text: 'Code', title: 'Snapshot of the code generator', onclick: () => h.onImage(f.id, 'code') }),
+      bgBtn,
     ])
     const slot = el('div', { class: 'slot' }, [
       thumb,
@@ -300,6 +317,7 @@ export function createFramesPanel(params, h) {
       return
     }
     if (!frames.some((f) => f.id === selected)) selected = frames[0].id
+    shapeSel.value = frames.find((f) => f.id === selected).shape // the picker follows the selected overlay
     frames.forEach((f, i) => {
       let thumb
       if (f.fill === 'solid') {
@@ -318,6 +336,7 @@ export function createFramesPanel(params, h) {
           onclick() {
             selected = f.id
             rebuild()
+            h.onSelect?.()
           },
         }, [thumb, el('span', { text: titleOf(f, i) })]),
       )

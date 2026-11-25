@@ -271,6 +271,8 @@ export const SELECTS = {
       ['custom', 'Custom (cm)'],
       ['2551x1949', 'Medio oficio (21.6 × 16.5 cm)'],
       ['2480x3508', 'A4 (21 × 29.7 cm)'],
+      ['1748x2480', 'A5 (14.8 × 21 cm)'],
+      ['1500x2100', '5 × 7 in @ 300 dpi'],
       ['2048x2048', '2048 × 2048 (1:1)'],
       ['4096x4096', '4096 × 4096 (1:1)'],
       ['3600x3600', '12 × 12 in @ 300 dpi'],
@@ -307,9 +309,12 @@ export const SELECTS = {
 export const REF_DPI = 300
 export const sizeToCm = (size) => size.split('x').map((n) => +((Number(n) / REF_DPI) * 2.54).toFixed(2))
 export const cmToPx = (cm, dpi) => Math.max(64, Math.round((Number(cm) / 2.54) * Number(dpi)))
+// Preset key for a size in cm. Portrait and landscape are the same format, so a rotated preset still matches (and keeps its key).
 export function sizeKeyFromCm(w, h) {
-  const key = `${Math.round((w / 2.54) * REF_DPI)}x${Math.round((h / 2.54) * REF_DPI)}`
-  return SELECTS.size.options.some(([v]) => v === key) ? key : 'custom'
+  const a = Math.round((w / 2.54) * REF_DPI)
+  const b = Math.round((h / 2.54) * REF_DPI)
+  const has = (key) => SELECTS.size.options.some(([v]) => v === key)
+  return has(`${a}x${b}`) ? `${a}x${b}` : has(`${b}x${a}`) ? `${b}x${a}` : 'custom'
 }
 
 // Controls restored by "Clean setup": everything that filters the artwork (no transform / generator geometry).
@@ -334,12 +339,24 @@ export const CYANO_KEYS = GROUPS.filter((g) => g.section === 'cyano').flatMap((g
   ...(g.toggles || []).map((t) => t.key),
 ])
 
+// Transparent PNG export: the faintest tones below this level become fully see-through (cleans a noisy background).
+export const PNG_CUT = {
+  key: 'pngCut',
+  label: 'Background cut-off',
+  min: 0,
+  max: 0.5,
+  step: 0.01,
+  def: 0.03,
+  hint: 'Transparent PNG: tones fainter than this become fully transparent. Raise it to remove a grainy or grey background',
+}
+
 export function defaults() {
   const p = { seed: 7, frames: [] } // frames: photo frames, see frames.js
   ;[p.printW, p.printH] = sizeToCm(SELECTS.size.def)
   for (const g of GROUPS) for (const c of g.controls) p[c.key] = c.def
   for (const [k, s] of Object.entries(SELECTS)) p[k] = s.def
   for (const g of GROUPS) for (const t of g.toggles || []) p[t.key] = t.def
+  p.pngCut = PNG_CUT.def
   return p
 }
 

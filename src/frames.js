@@ -219,6 +219,8 @@ export function makeFrameLayer(p) {
       solid,
       tone: f.tone ?? 1,
       src,
+      // Cut-out of the picture (background removed): 0 = see through to what is below the shape.
+      cut: src?.alpha ? { gray: src.alpha, w: src.w, h: src.h } : null,
       shape: SHAPE_ID[f.shape] ?? 0,
       cx: f.x * k,
       cy: f.y * k,
@@ -255,12 +257,16 @@ export function makeFrameLayer(p) {
       const d = shapeDist(f.shape, u, v)
       if (d >= 1) continue
       const t = Math.min(1, (1 - d) / f.feather)
-      const a = t * t * (3 - 2 * t) * f.op
+      let a = t * t * (3 - 2 * t) * f.op
       let fv
+      let keep = 1 // how much of the picture is kept here (the cut-out)
       if (f.solid) {
         fv = f.tone // flat tone, no picture
       } else {
-        fv = sampleGray(f.src, f.ox + u * f.flx * f.sx, f.oy + v * f.fly * f.sy)
+        const su = f.ox + u * f.flx * f.sx
+        const sv = f.oy + v * f.fly * f.sy
+        fv = sampleGray(f.src, su, sv)
+        if (f.cut) keep = sampleGray(f.cut, su, sv)
         if (f.invert) fv = 1 - fv
         fv = (fv - 0.5) * f.contr + 0.5 + f.bright
         fv = fv < 0 ? 0 : fv > 1 ? 1 : fv
@@ -268,7 +274,9 @@ export function makeFrameLayer(p) {
       if (f.ring > 0) {
         const m = Math.min(1, Math.max(0, (d - (1 - f.ring)) / 0.012))
         fv += (f.ringTone - fv) * m
+        keep += (1 - keep) * m // the outline stays even where the picture was cut out
       }
+      a *= keep
       let out
       switch (f.blend) {
         case 1: out = val + fv; break

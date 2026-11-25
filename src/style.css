@@ -179,6 +179,48 @@ button.topbtn:disabled { opacity: 0.35; cursor: default; }
 #stage.hand canvas { cursor: grab; }
 #stage.hand.panning canvas { cursor: grabbing; }
 
+/* Selection guide around the selected shape (guide.js): box, 8 handles, rotate handle, live size */
+.guide { position: absolute; z-index: 1; pointer-events: none; }
+.guide[hidden] { display: none; }
+.gbox {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px solid var(--accent);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55); /* keeps the line readable over light areas */
+  transform-origin: 50% 50%;
+}
+.gh {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  box-sizing: border-box;
+  background: var(--accent);
+  border: 1px solid var(--accent-ink);
+  border-radius: 3px;
+  pointer-events: auto;
+  touch-action: none;
+}
+.gh::after { content: ''; position: absolute; inset: -7px; } /* a bigger area to grab */
+.gh:hover { background: #fff; }
+.gstem { position: absolute; left: 50%; top: -30px; width: 1.5px; height: 30px; margin-left: -0.75px; background: var(--accent); pointer-events: none; }
+.grot { left: 50%; top: -30px; border-radius: 50%; cursor: grab; }
+.grot:active { cursor: grabbing; }
+.gtip {
+  position: absolute;
+  transform: translateX(-50%);
+  padding: 3px 9px;
+  background: rgba(14, 14, 14, 0.92);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.gtip[hidden] { display: none; }
+
 /* Floating tools over the preview */
 .stagetools { position: absolute; top: 14px; left: 18px; display: flex; gap: 6px; z-index: 2; }
 .stagetools button {
@@ -190,6 +232,30 @@ button.topbtn:disabled { opacity: 0.35; cursor: default; }
 }
 .stagetools button.on,
 .stagetools button.overlaybtn.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+/* Format bar over the preview: page format, size in cm, portrait / landscape */
+.formatbar {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 8px;
+  background: rgba(14, 14, 14, 0.85);
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 12px;
+}
+.formatbar select { width: 170px; padding: 4px 8px; font-size: 12px; border-radius: 999px; }
+.formatbar .dims { display: inline-flex; align-items: center; gap: 4px; color: var(--dim); }
+.formatbar .dims input { width: 58px; padding: 4px 6px; font-size: 12px; text-align: right; border-radius: 8px; }
+.formatbar .orients { display: inline-flex; gap: 2px; }
+.formatbar button.orient { padding: 5px 7px; line-height: 0; border: 0; border-radius: 999px; background: transparent; color: var(--dim); }
+.formatbar button.orient:hover { color: var(--text); }
+.formatbar button.orient.on { background: var(--accent); color: var(--accent-ink); }
 
 /* Status line: a thin strip under the preview */
 .status {
@@ -249,6 +315,16 @@ button.topbtn:disabled { opacity: 0.35; cursor: default; }
   font-weight: 500;
 }
 .emptyrow button:hover:not(:disabled) { background: #141414; border-color: #55544f; }
+.emptyrow .emptyshape {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 150px;
+  margin-left: -6px; /* reads as part of the "Shape on black" button */
+  padding: 11px 14px;
+  background-color: transparent;
+  border: 1px solid #3a3a38;
+  border-radius: 999px;
+}
 .emptyrow button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .emptyrow button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
 
@@ -550,6 +626,94 @@ textarea::placeholder { color: #66655f; }
 .ai-locked .foldbody select,
 .ai-locked .foldbody .toggle { opacity: 0.5; cursor: not-allowed; }
 .dock button:disabled { cursor: not-allowed; }
+
+/* ============ Crop dialog ============ */
+.cropmodal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.74);
+}
+.cropcard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(920px, 100%);
+  max-height: 100%;
+  padding: 16px 18px 18px;
+  overflow: auto;
+  background: #0e0e0e;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7);
+}
+.cropcard header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.croptitle { margin: 0; font-family: var(--font-display); font-size: 28px; font-weight: 400; color: var(--text); }
+button.cropclose { width: 32px; height: 32px; padding: 0; font-size: 20px; line-height: 1; border-radius: 8px; }
+.cropaspects { display: flex; flex-wrap: wrap; gap: 6px; }
+.cropaspects button { padding: 5px 12px; font-size: 12px; border-radius: 999px; }
+.cropaspects button.on { background: var(--accent); border-color: transparent; color: var(--accent-ink); }
+.cropwork {
+  flex: 0 0 auto; /* never squash the picture: the card scrolls on short screens instead */
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  overflow: hidden; /* the dimmed area around the selection must not leave this box */
+  background: #050505;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.cropstage { position: relative; line-height: 0; cursor: crosshair; touch-action: none; user-select: none; }
+.cropimg { display: block; width: 100%; height: 100%; }
+.cropbox {
+  position: absolute;
+  cursor: move;
+  outline: 1.5px solid var(--accent);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.62);
+  /* rule of thirds */
+  background-image:
+    linear-gradient(to right, transparent calc(33.33% - 0.5px), rgba(255, 255, 255, 0.28) calc(33.33% - 0.5px), rgba(255, 255, 255, 0.28) calc(33.33% + 0.5px), transparent calc(33.33% + 0.5px), transparent calc(66.66% - 0.5px), rgba(255, 255, 255, 0.28) calc(66.66% - 0.5px), rgba(255, 255, 255, 0.28) calc(66.66% + 0.5px), transparent calc(66.66% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(33.33% - 0.5px), rgba(255, 255, 255, 0.28) calc(33.33% - 0.5px), rgba(255, 255, 255, 0.28) calc(33.33% + 0.5px), transparent calc(33.33% + 0.5px), transparent calc(66.66% - 0.5px), rgba(255, 255, 255, 0.28) calc(66.66% - 0.5px), rgba(255, 255, 255, 0.28) calc(66.66% + 0.5px), transparent calc(66.66% + 0.5px));
+}
+.cropbox:focus-visible { outline-width: 2.5px; }
+.cropbox .handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border: 1px solid var(--accent-ink);
+  border-radius: 3px;
+  transform: translate(-50%, -50%);
+}
+.cropbox .nw { left: 0; top: 0; cursor: nwse-resize; }
+.cropbox .n { left: 50%; top: 0; cursor: ns-resize; }
+.cropbox .ne { left: 100%; top: 0; cursor: nesw-resize; }
+.cropbox .e { left: 100%; top: 50%; cursor: ew-resize; }
+.cropbox .se { left: 100%; top: 100%; cursor: nwse-resize; }
+.cropbox .s { left: 50%; top: 100%; cursor: ns-resize; }
+.cropbox .sw { left: 0; top: 100%; cursor: nesw-resize; }
+.cropbox .w { left: 0; top: 50%; cursor: ew-resize; }
+/* Remove background dialog: the picture sits on a checkerboard so the transparent parts are visible. */
+.bgcanvas {
+  display: block;
+  image-rendering: auto;
+  background-color: #2a2a2a;
+  background-image: linear-gradient(45deg, #3a3a3a 25%, transparent 25%, transparent 75%, #3a3a3a 75%),
+    linear-gradient(45deg, #3a3a3a 25%, transparent 25%, transparent 75%, #3a3a3a 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+.bgrow { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; }
+.bgbar { width: 100%; height: 6px; accent-color: var(--accent); }
+.bgsliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 24px; }
+.bgctl { display: grid; grid-template-columns: 110px 1fr 38px; gap: 10px; align-items: center; font-size: 12.5px; color: var(--text); }
+.bgctl input { width: 100%; accent-color: var(--accent); }
+.bgval { color: var(--dim); font-variant-numeric: tabular-nums; text-align: right; }
+.cropinfo { color: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.cropfoot { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
 
 /* Cyanotype panel */
 .segmented { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line-strong); border-radius: 10px; overflow: hidden; }
