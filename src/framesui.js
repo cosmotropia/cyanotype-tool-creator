@@ -19,8 +19,53 @@ function el(tag, attrs = {}, children = []) {
 
 const thumbCache = new WeakMap() // source -> data url
 const shapeName = (f) => (FRAME_SHAPES.find(([v]) => v === f.shape) || [])[1] || f.shape
-const titleOf = (f, i) =>
-  `${i + 1} · ${shapeName(f)}${f.fill === 'solid' ? ' · solid' : frameImages.has(f.id) ? '' : ' (no picture)'}${f.visible === false ? ' · hidden' : ''}`
+const subtitleOf = (f) => {
+  const base = f.fill === 'solid' ? 'Solid tone' : frameImages.has(f.id) ? 'Photo' : 'No picture yet'
+  return f.visible === false ? `${base} · hidden` : base
+}
+
+// One filled silhouette per shape (24 × 24, static markup), used by the pickers and the layer list.
+const SHAPE_PATHS = {
+  circle: '<circle cx="12" cy="12" r="9"/>',
+  rect: '<rect x="3" y="5" width="18" height="14" rx="1"/>',
+  rounded: '<rect x="4" y="4" width="16" height="16" rx="5"/>',
+  triangle: '<path d="M12 4 21.5 20h-19z"/>',
+  diamond: '<path d="M12 2.5 21.5 12 12 21.5 2.5 12z"/>',
+  hexagon: '<path d="M12 2.8l8 4.6v9.2l-8 4.6-8-4.6V7.4z"/>',
+  star: '<path d="M12 2.8l2.8 6 6.5.7-4.8 4.5 1.3 6.5L12 17.2 6.2 20.5l1.3-6.5L2.7 9.5l6.5-.7z"/>',
+  arch: '<path d="M5 21V11a7 7 0 0 1 14 0v10z"/>',
+}
+export function shapeIcon(id) {
+  const s = document.createElement('span')
+  s.className = 'shapeico'
+  s.setAttribute('aria-hidden', 'true')
+  s.innerHTML = `<svg viewBox="0 0 24 24" width="100%" height="100%" fill="currentColor">${SHAPE_PATHS[id] || SHAPE_PATHS.circle}</svg>`
+  return s
+}
+const EYE = '<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'
+const EYE_OFF = '<path d="M3 3l18 18"/><path d="M10.6 5.6A10 10 0 0 1 12 5.5c6.4 0 10 6.5 10 6.5a17 17 0 0 1-3.2 3.9M6.6 6.9C4 8.7 2 12 2 12s3.6 6.5 10 6.5a9.6 9.6 0 0 0 4.2-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>'
+const svgIcon = (inner) => {
+  const s = document.createElement('span')
+  s.className = 'ico'
+  s.setAttribute('aria-hidden', 'true')
+  s.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`
+  return s
+}
+
+/** A row of shape tiles (icons). onPick(shapeId) runs when one is clicked; .set(id) marks the current one. */
+function shapePicker(label, onPick) {
+  const tiles = FRAME_SHAPES.map(([v, t]) =>
+    el('button', { type: 'button', class: 'shapetile', 'data-shape': v, title: t, 'aria-label': t, onclick: () => onPick(v) }, [shapeIcon(v)]),
+  )
+  const node = el('div', { class: 'shapegrid', role: 'group', 'aria-label': label }, tiles)
+  node.set = (id) =>
+    tiles.forEach((b) => {
+      const on = b.dataset.shape === id
+      b.classList.toggle('on', on)
+      b.setAttribute('aria-pressed', String(on))
+    })
+  return node
+}
 const toneCss = (t) => {
   const v = Math.round(Math.min(1, Math.max(0, t)) * 255)
   return `rgb(${v}, ${v}, ${v})`
@@ -45,16 +90,26 @@ export function createFramesPanel(params, h) {
 
   const list = el('div', { class: 'frameitems' })
   const editor = el('div', { class: 'frameeditor' })
-  // One shape picker for the whole panel: it shows and changes the shape of the overlay you are editing, and it is the
-  // shape of the next one you add. (Picking an overlay in the list moves it to that overlay's shape.)
-  const shapeSel = el('select', { class: 'shape-new', 'aria-label': 'Shape' }, FRAME_SHAPES.map(([v, t]) => el('option', { value: v, text: t })))
-  shapeSel.addEventListener('change', () => {
-    const f = params.frames.find((x) => x.id === selected)
-    if (!f) return // nothing selected: it only sets the shape of the next overlay
-    f.shape = shapeSel.value
-    h.onChange()
-    rebuild() // the list and the editor show the new shape
-  })
+  // "Add" row: clicking a shape adds it right away (solid tone by default, or a photo shape if that is picked).
+  // The shape of an existing one is changed in its own editor below, so each picker does exactly one thing.
+  let addFill = 'solid'
+  const addGrid = shapePicker('Add a shape', (shape) => h.onAdd(shape, addFill))
+  const addModeBtns = [
+    ['solid', 'Solid tone', 'A flat tone shape: no picture needed'],
+    ['photo', 'Photo', 'A shape cut from a picture (give it one below)'],
+  ].map(([v, label, title]) =>
+    el('button', {
+      type: 'button',
+      class: 'seg' + (v === addFill ? ' on' : ''),
+      'data-v': v,
+      text: label,
+      title,
+      onclick() {
+        addFill = v
+        addModeBtns.forEach((b) => b.classList.toggle('on', b.dataset.v === v))
+      },
+    }),
+  )
   const layoutSel = el('select', { 'aria-label': 'Ready-made layouts' }, [el('option', { value: '', text: 'Ready-made layouts…' })].concat(
     Object.keys(FRAME_LAYOUTS).map((n) => el('option', { value: n, text: n })),
   ))
@@ -64,14 +119,14 @@ export function createFramesPanel(params, h) {
   })
   const clearBtn = el('button', { type: 'button', text: 'Remove all overlays', onclick: () => h.onClear() })
 
+  const listCount = el('span', { class: 'count' })
+  const listHead = el('div', { class: 'shapehead' }, [el('span', { text: 'Your shapes' }), listCount])
   const root = el('div', { class: 'block flat framesblock' }, [
-    el('div', { class: 'hint', text: 'Shapes sit on top of the black background or the picture. A solid shape needs no picture: it is one flat tone. A photo shape shows a picture cut into the shape.' }),
-    el('label', { class: 'ctl', title: 'The shape of the selected overlay, and of the next one you add' }, [el('span', { class: 'row', text: 'Shape' }), shapeSel]),
-    el('div', { class: 'row2 wrap' }, [
-      el('button', { type: 'button', class: 'primary solid-add', text: '+ Solid shape', title: 'A flat tone shape: no picture needed', onclick: () => h.onAdd(shapeSel.value, 'solid') }),
-      el('button', { type: 'button', text: '+ Photo shape', title: 'A shape cut from a picture (give it one below)', onclick: () => h.onAdd(shapeSel.value, 'photo') }),
-    ]),
+    el('div', { class: 'shapehead first' }, [el('span', { text: 'Add a shape' })]),
+    addGrid,
+    el('div', { class: 'addmode' }, [el('span', { class: 'lbl', text: 'Fill' }), el('div', { class: 'segmented two', role: 'group', 'aria-label': 'Fill of the next shape' }, addModeBtns)]),
     layoutSel,
+    listHead,
     list,
     editor,
     el('div', { class: 'row2' }, [clearBtn]),
@@ -222,13 +277,12 @@ export function createFramesPanel(params, h) {
       f.blend = blend.value
       h.onChange()
     })
-    const shape = el('select', { 'aria-label': 'Shape' }, FRAME_SHAPES.map(([v, t]) => el('option', { value: v, text: t })))
-    shape.value = f.shape
-    shape.addEventListener('change', () => {
-      f.shape = shape.value
+    const shapeGrid = shapePicker('Shape', (v) => {
+      f.shape = v
       h.onChange()
-      rebuild() // the list shows the shape name
+      rebuild() // the list and the header show the new shape
     })
+    shapeGrid.set(f.shape)
 
     const center = el('button', {
       type: 'button',
@@ -241,9 +295,6 @@ export function createFramesPanel(params, h) {
         h.onChange()
       },
     })
-
-    const showToggle = toggle(f, 'visible', 'Show this overlay')
-    showToggle.querySelector('input').addEventListener('change', rebuild) // the list marks hidden overlays
 
     // Fill: photo (needs a picture) or solid (one flat tone, no picture). Switching re-draws the editor.
     const solid = f.fill === 'solid'
@@ -265,15 +316,17 @@ export function createFramesPanel(params, h) {
       }),
     )
     fillBtns.forEach((b) => b.classList.toggle('on', b.dataset.v === (solid ? 'solid' : 'photo')))
-    const fillRow = el('div', { class: 'segmented', role: 'group', 'aria-label': 'Fill' }, fillBtns)
+    const fillRow = el('div', { class: 'segmented two', role: 'group', 'aria-label': 'Fill' }, fillBtns)
     const toneSlider = slider(f, 'tone', 'Tone (0 black · 1 white)', 0, 1, 0.01)
     const solidHint = el('div', { class: 'hint', text: 'Solid: no picture needed. The shape is painted in this tone over the black background.' })
 
     return [
-      el('div', { class: 'editing', text: `Editing overlay ${i + 1}` }),
+      el('div', { class: 'editing' }, [shapeIcon(f.shape), el('span', { text: 'Editing' }), el('b', { text: shapeName(f) })]),
       fillRow,
       ...(solid ? [toneSlider, solidHint] : [slot]),
-      showToggle,
+      heading('Shape'),
+      shapeGrid,
+      heading('Arrange'),
       bar,
 
       heading('Size'),
@@ -295,8 +348,7 @@ export function createFramesPanel(params, h) {
       slider(f, 'rot', 'Rotation', -180, 180, 0.5, '°'),
       el('div', { class: 'row2' }, [toggle(f, 'flipX', 'Flip left ↔ right'), toggle(f, 'flipY', 'Flip up ↔ down')]),
 
-      heading('Shape & edges'),
-      el('label', { class: 'ctl' }, [el('span', { class: 'row', text: 'Shape' }), shape]),
+      heading('Edges'),
       slider(f, 'soft', 'Soft edge', 0, 0.6, 0.01),
       slider(f, 'border', 'Outline thickness', 0, 2, 0.05, ' cm'),
       slider(f, 'borderTone', 'Outline brightness', 0, 1, 0.01),
@@ -310,45 +362,80 @@ export function createFramesPanel(params, h) {
     editor.replaceChildren()
     const frames = params.frames
     clearBtn.hidden = !frames.length
+    listHead.hidden = !frames.length
+    listCount.textContent = String(frames.length)
+    h.onCount?.(frames.length)
     if (!frames.length) {
       selected = null
       syncers = []
-      list.append(el('div', { class: 'hint', text: 'No overlays yet. Add one, or start from a ready-made layout (for example 3 circles). Then pick it in the list to set its picture, size, shape and position.' }))
+      list.append(el('div', { class: 'hint emptylist', text: 'No shapes yet. Click a shape above to add it, or pick a ready-made layout.' }))
       return
     }
     if (!frames.some((f) => f.id === selected)) selected = frames[0].id
-    shapeSel.value = frames.find((f) => f.id === selected).shape // the picker follows the selected overlay
-    frames.forEach((f, i) => {
-      let thumb
-      if (f.fill === 'solid') {
-        thumb = el('span', { class: 'swatch', 'aria-hidden': 'true' })
-        thumb.style.background = toneCss(f.tone)
-      } else {
-        thumb = el('img', { alt: '', width: 32, height: 32 })
-        const url = thumbFor(f)
-        if (url) thumb.src = url
+    // Top of the stack first, like the layers of any design app (the last one is drawn on top).
+    for (let i = frames.length - 1; i >= 0; i--) {
+      const f = frames[i]
+      const on = f.id === selected
+      const hidden = f.visible === false
+      const thumb = el('span', { class: 'fthumb', 'aria-hidden': 'true' })
+      const url = f.fill === 'solid' ? null : thumbFor(f)
+      if (url) thumb.append(el('img', { alt: '', width: 32, height: 32, src: url }))
+      else {
+        const ic = shapeIcon(f.shape)
+        ic.style.color = f.fill === 'solid' ? toneCss(f.tone) : '#5d5c59' // a solid shape shows its own tone
+        thumb.append(ic)
       }
+      const eye = el('button', {
+        type: 'button',
+        class: 'eyebtn' + (hidden ? ' off' : ''),
+        title: hidden ? 'Show this shape' : 'Hide this shape',
+        'aria-label': hidden ? 'Show this shape' : 'Hide this shape',
+        'aria-pressed': String(hidden),
+        onclick() {
+          f.visible = hidden // flip
+          h.onChange()
+          rebuild()
+        },
+      }, [svgIcon(hidden ? EYE_OFF : EYE)])
       list.append(
-        el('button', {
-          type: 'button',
-          class: 'frameitem' + (f.id === selected ? ' on' : ''),
-          'aria-pressed': String(f.id === selected),
-          onclick() {
-            selected = f.id
-            rebuild()
-            h.onSelect?.()
-          },
-        }, [thumb, el('span', { text: titleOf(f, i) })]),
+        el('div', { class: 'frameitem' + (on ? ' on' : '') + (hidden ? ' off' : '') }, [
+          el('button', {
+            type: 'button',
+            class: 'frameselect',
+            'aria-pressed': String(on),
+            onclick() {
+              selected = f.id
+              rebuild()
+              h.onSelect?.()
+            },
+          }, [thumb, el('span', { class: 'fname' }, [el('span', { class: 'ftitle', text: shapeName(f) }), el('small', { text: subtitleOf(f) })])]),
+          eye,
+        ]),
       )
-    })
+    }
     const i = frames.findIndex((f) => f.id === selected)
     editor.append(...buildEditor(frames[i], i, frames.length))
+  }
+
+  // Bring the editor of the selected shape into view (the user just added or picked it), optionally with a short glow.
+  function reveal(flash = false) {
+    const target = editor.firstElementChild || root
+    target.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    if (!flash) return
+    for (const n of [editor, list.querySelector('.frameitem.on')]) {
+      if (!n) continue
+      n.classList.remove('flash')
+      void n.offsetWidth // restart the animation
+      n.classList.add('flash')
+      n.addEventListener('animationend', () => n.classList.remove('flash'), { once: true })
+    }
   }
 
   rebuild()
   return {
     el: root,
     rebuild,
+    reveal,
     open: (id) => (selected = id), // select an overlay; the caller rebuilds afterwards
     selectedId: () => (params.frames.some((f) => f.id === selected) ? selected : null),
     sync: () => syncers.forEach((fn) => fn()), // after the selected overlay was moved or scaled from outside

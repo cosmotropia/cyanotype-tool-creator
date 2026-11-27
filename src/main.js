@@ -16,6 +16,7 @@ import { encodePNG, encodeTIFF, toGray8, toGray16, toInkAlpha8 } from './encode.
 import { simulatePrint } from './cyanotype.js'
 import { createDataPanel } from './datapanel.js'
 import { applyMeasures } from './measure.js'
+import { shapeIcon } from './framesui.js'
 import { frameImages, newFrame, sanitizeFrame, sanitizeFrames, hitFrame, FRAME_LAYOUTS, FRAME_SHAPES } from './frames.js'
 
 const params = defaults()
@@ -153,28 +154,22 @@ for (const label of ['Code', 'Upload', 'Sample']) {
     }),
   )
 }
-// Shapes on the plain black background: no picture needed. Opens the Layers tab and adds a solid shape there,
-// in the shape picked next to the button (the Layers tab picker is set to the same one).
-const startShape = document.createElement('select')
-startShape.className = 'emptyshape'
-startShape.setAttribute('aria-label', 'Shape')
-startShape.title = 'Shape to start with'
-for (const [value, text] of FRAME_SHAPES) startShape.append(Object.assign(document.createElement('option'), { value, textContent: text }))
-startRow.append(
-  Object.assign(document.createElement('button'), {
-    type: 'button',
-    textContent: 'Shape on black',
-    title: 'Start with a solid shape on the black background (no picture needed)',
-    onclick: () => {
-      const tabs = panel.querySelectorAll('.tab')
-      tabs[tabs.length - 1]?.click() // Layers
-      const picker = panel.querySelector('.shape-new')
-      if (picker) picker.value = startShape.value // setting the value does not fire its change handler
-      panel.querySelector('.solid-add')?.click() // onAdd(shape, 'solid') switches the preview to the black background
-    },
-  }),
-  startShape,
-)
+// Shapes on the plain black background: no picture needed. Each tile adds that solid shape, selected, and takes the
+// user to the Layers tab to edit it (see frames.onAdd).
+const startShapes = document.createElement('div')
+startShapes.className = 'emptyshapes'
+startShapes.append(Object.assign(document.createElement('span'), { className: 'emptyshapes-label', textContent: 'Or start with a shape on black' }))
+const startTiles = document.createElement('div')
+startTiles.className = 'shapegrid big'
+startTiles.setAttribute('role', 'group')
+startTiles.setAttribute('aria-label', 'Start with a shape')
+for (const [value, text] of FRAME_SHAPES) {
+  const b = Object.assign(document.createElement('button'), { type: 'button', className: 'shapetile', title: text, onclick: () => ui.addShape(value) })
+  b.setAttribute('aria-label', text)
+  b.append(shapeIcon(value))
+  startTiles.append(b)
+}
+startShapes.append(startTiles)
 // Viewfinder marks around an empty frame (decoration only).
 const emptyFrame = Object.assign(document.createElement('div'), { className: 'emptyframe' })
 emptyFrame.setAttribute('aria-hidden', 'true')
@@ -189,6 +184,7 @@ emptyHint.append(
       : 'Upload a reference, try a sample, draw one with the code generator, or place shapes on the black background.',
   }),
   startRow,
+  startShapes,
 )
 stage.append(emptyHint)
 const updateEmptyState = () => {
@@ -455,11 +451,12 @@ const ui = createUI(panel, params, {
       if (fill === 'solid' && slots.A.kind === 'none') ui.set('preview', 'mono')
       ui.openFrame(f.id)
       ui.rebuildFrames()
+      ui.revealFrames(true) // open the Layers tab on the new shape, so it is clear that this is where it is edited
       showGuide(true) // the new shape comes selected, with its handles
       request('base')
       ui.setStatus(
         fill === 'solid'
-          ? 'Solid shape added on the black background · pick it in the list to change its tone, size or position'
+          ? 'Shape added · drag it or its handles on the preview, or use the controls in Layers'
           : 'Photo shape added · give it a picture with Upload, Sample or Code (Layers tab)',
       )
     },
@@ -616,6 +613,14 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'h' || e.key === 'H') setHand(!hand)
   else if ((e.key === 'o' || e.key === 'O') && params.frames.length) setOverlayTool(!ovMode)
   else if (e.key === 'Escape' && guide?.isVisible()) showGuide(false) // deselect
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && guide?.isVisible() && selectedOverlay()) {
+    e.preventDefault()
+    const id = selectedOverlay().id
+    params.frames = params.frames.filter((f) => f.id !== id)
+    ui.rebuildFrames()
+    request('base')
+    ui.setStatus('Shape removed')
+  }
   else if (e.key === '1' || e.key === '2' || e.key === '3') {
     ui.set('preview', ['mono', 'negative', 'cyanotype'][Number(e.key) - 1])
     request('post')
@@ -966,6 +971,7 @@ const startSketch = () =>
           if (ui.selectedFrame() !== hit.id) {
             ui.openFrame(hit.id)
             ui.rebuildFrames()
+            ui.revealFrames() // selecting a shape on the preview opens its controls, like in any design app
           }
           showGuide(true)
         } else {

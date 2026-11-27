@@ -368,7 +368,8 @@ export function createUI(root, params, h) {
     sectionEls[g.section].append(group(g.title, g.open, kids))
   }
 
-  const framesPanel = createFramesPanel(params, h.frames)
+  let onShapeCount = () => {} // set once the tabs exist: the Layers tab shows how many shapes there are
+  const framesPanel = createFramesPanel(params, { ...h.frames, onCount: (n) => onShapeCount(n) })
   sectionEls.frames.append(framesPanel.el)
   sectionEls.frames.dataset.sect = 'frames'
 
@@ -449,6 +450,28 @@ export function createUI(root, params, h) {
   for (const [id, label] of TABS) {
     tabBtns[id] = el('button', { type: 'button', class: 'tab', role: 'tab', text: label, onclick: () => selectTab(id) })
     tablist.append(tabBtns[id])
+  }
+  // Layers tab: a small count of the shapes on the canvas.
+  const layersCount = el('span', { class: 'tabcount', 'aria-hidden': 'true', translate: 'no' })
+  tabBtns.layers.append(layersCount)
+  onShapeCount = (n) => {
+    layersCount.textContent = String(n)
+    layersCount.hidden = !n
+  }
+  onShapeCount(params.frames.length)
+  // Take the user to the shapes: open the Layers tab (with a short pulse so the move is noticed), scroll to the
+  // selected shape's editor and, when asked, make it glow.
+  function revealFrames(flash = false) {
+    const t = tabBtns.layers
+    const was = t.getAttribute('aria-selected') === 'true'
+    selectTab('layers')
+    if (!was) {
+      t.classList.remove('pulse')
+      void t.offsetWidth
+      t.classList.add('pulse')
+      t.addEventListener('animationend', () => t.classList.remove('pulse'), { once: true })
+    }
+    framesPanel.reveal(flash)
   }
   tablist.addEventListener('keydown', (e) => {
     const i = TABS.findIndex(([k]) => tabBtns[k].getAttribute('aria-selected') === 'true')
@@ -597,6 +620,8 @@ export function createUI(root, params, h) {
     },
     rebuildFrames: framesPanel.rebuild,
     openFrame: framesPanel.open,
+    revealFrames,
+    addShape: (shape, fill = 'solid') => h.frames.onAdd(shape, fill),
     selectedFrame: framesPanel.selectedId,
     syncFrames: framesPanel.sync,
     applyForm,
