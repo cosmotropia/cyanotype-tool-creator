@@ -46,11 +46,12 @@ button, input, select, textarea { font-family: var(--font-body); }
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--side-w);
   height: 100vh;
+  height: 100dvh; /* mobile browsers: the visible height, without the address bar */
 }
 #workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto; /* top bar · tool row · preview · status */
   min-width: 0;
   min-height: 0;
 }
@@ -67,7 +68,7 @@ button, input, select, textarea { font-family: var(--font-body); }
   background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
-.brand-wrap { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; }
+.brand-wrap { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; overflow: hidden; }
 .brand, .display-title { font-family: var(--font-display); }
 .brand {
   margin: 0;
@@ -221,25 +222,33 @@ button.topbtn:disabled { opacity: 0.35; cursor: default; }
 }
 .gtip[hidden] { display: none; }
 
-/* Floating tools over the preview */
-.stagetools { position: absolute; top: 14px; left: 18px; display: flex; gap: 6px; z-index: 2; }
+/* Tool row above the preview: tools on the left, the print format on the right. Wraps instead of overlapping. */
+.stagebar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  min-width: 0;
+  padding: 10px 18px;
+  background: var(--stage);
+}
+.stagetools { display: flex; flex: none; gap: 6px; }
 .stagetools button {
   padding: 5px 12px;
   font-size: 12px;
+  white-space: nowrap;
   background: rgba(14, 14, 14, 0.85);
-  backdrop-filter: blur(4px);
   border-radius: 999px;
 }
 .stagetools button.on,
 .stagetools button.overlaybtn.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 
-/* Format bar over the preview: page format, size in cm, portrait / landscape */
+/* Format bar: page format, size in cm, portrait / landscape */
 .formatbar {
-  position: absolute;
-  top: 14px;
-  right: 18px;
-  z-index: 2;
   display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
   align-items: center;
   gap: 8px;
   padding: 4px 6px 4px 8px;
@@ -249,8 +258,9 @@ button.topbtn:disabled { opacity: 0.35; cursor: default; }
   border-radius: 999px;
   font-size: 12px;
 }
-.formatbar select { width: 170px; padding: 4px 8px; font-size: 12px; border-radius: 999px; }
-.formatbar .dims { display: inline-flex; align-items: center; gap: 4px; color: var(--dim); }
+.formatbar select { flex: 0 1 170px; width: 170px; min-width: 120px; padding: 4px 26px 4px 8px; font-size: 12px; border-radius: 999px; text-overflow: ellipsis; }
+.formatbar .dims { display: inline-flex; flex: none; align-items: center; gap: 4px; color: var(--dim); }
+.formatbar .orients { flex: none; }
 .formatbar .dims input { width: 58px; padding: 4px 6px; font-size: 12px; text-align: right; border-radius: 8px; }
 .formatbar .orients { display: inline-flex; gap: 2px; }
 .formatbar button.orient { padding: 5px 7px; line-height: 0; border: 0; border-radius: 999px; background: transparent; color: var(--dim); }
@@ -277,12 +287,14 @@ button.topbtn:disabled { opacity: 0.35; cursor: default; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center; /* on a short preview it scrolls from the top instead of cutting the title */
   gap: 14px;
   padding: 24px;
+  overflow-y: auto;
   text-align: center;
   background: var(--stage);
 }
+.emptyhint > * { flex: none; }
 .emptyframe { position: relative; flex: none; width: min(300px, 52%); height: min(300px, 34vh); min-height: 160px; margin-bottom: 22px; }
 .emptyframe .corner { position: absolute; width: 18px; height: 18px; border: 0 solid #6a6965; }
 .emptyframe .tl { top: 0; left: 0; border-top-width: 1px; border-left-width: 1px; }
@@ -601,6 +613,8 @@ textarea::placeholder { color: #66655f; }
 .ai-msg[data-kind='soon'] { color: var(--dim); }
 
 /* Coming soon: AI controls are visible but locked (VITE_AI_ENABLED=false) */
+.foldhead .ico { order: 3; }
+.foldhead .soonbadge { order: 2; margin: 0 12px 0 auto; }
 .soonbadge {
   margin-left: 10px;
   padding: 1px 8px;
@@ -779,17 +793,95 @@ button.tab.pulse { animation: tabpulse 1.2s ease-out; }
 @keyframes tabpulse { 0%, 40% { background: var(--accent-soft); color: var(--text); } 100% { background: transparent; } }
 .framegroup { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--dim); }
 
+/* ============ Responsive ============
+   ≥1280 desktop · 1024–1279 laptop (narrower panel) · ≤1100 icon-only top bar ·
+   ≤900 portrait / ≤640 any: preview on top, panel below · ≤480 phone · touch screens get bigger targets. */
 @media (max-width: 1280px) {
+  :root { --side-w: 330px; --pad: 18px; }
   .brand-sep, .brand-tag { display: none; }
 }
-@media (max-width: 800px) {
-  #app { grid-template-columns: 1fr; grid-template-rows: 55vh 1fr; }
-  #side { border-left: 0; border-top: 1px solid var(--line); }
+@media (max-width: 1100px) {
+  #topbar { gap: 10px; padding: 0 10px 0 18px; }
+  .brand { font-size: 26px; }
+  /* Labels go, icons stay (each button keeps its name as a tooltip and for screen readers). */
+  button.topbtn > span:not(.ico):not(.langcode) { display: none; }
+  button.topbtn { padding: 8px 9px; }
+  .stagebar { padding: 8px 12px; }
 }
+@media (max-width: 1024px) {
+  :root { --side-w: 300px; }
+  .ctl { grid-template-columns: minmax(0, 88px) minmax(0, 1fr) 70px; column-gap: 10px; }
+  .ctl:has(> select) { grid-template-columns: minmax(0, 88px) minmax(0, 1fr); }
+}
+
+/* Stacked layout: preview (with its top bar and tools) on top, the panel scrolls below. */
+@media (max-width: 900px) and (orientation: portrait), (max-width: 640px) {
+  #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(300px, 56dvh) minmax(0, 1fr); }
+  #side { border-left: 0; border-top: 1px solid var(--line); }
+  .tabs { padding: 0 4px; }
+  button.tab { padding: 14px 6px 12px; }
+  .ctl { grid-template-columns: minmax(0, 110px) minmax(0, 1fr) 70px; }
+  .ctl:has(> select) { grid-template-columns: minmax(0, 110px) minmax(0, 1fr); }
+  /* The panel is short here: a compact Generate dock leaves room for the controls. */
+  .dock { gap: 8px; padding: 10px var(--pad) 12px; }
+  .dock .hint[data-kind='soon'], .dock .hint[data-kind='ok'] { display: none; } /* errors and progress stay */
+  button.generate { padding: 11px; }
+  .dock .row2 button { padding: 7px 10px; font-size: 12.5px; }
+}
+/* Landscape phones: keep two columns but slimmer, so the preview keeps its height. */
+@media (max-height: 520px) and (orientation: landscape) {
+  :root { --side-w: 300px; }
+  #topbar { height: 46px; }
+  .stagebar { padding: 6px 10px; }
+  .status { display: none; }
+}
+
+@media (max-width: 480px) {
+  :root { --pad: 16px; }
+  #topbar { height: 52px; padding: 0 6px 0 14px; gap: 6px; }
+  .brand { font-size: 22px; }
+  .topdivider { margin: 0 2px; }
+  button.topbtn { padding: 8px 7px; }
+  /* One scrollable row of tools instead of two stacked rows: the preview keeps its height. */
+  .stagebar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 6px 10px; gap: 8px; }
+  .stagebar::-webkit-scrollbar { display: none; }
+  .stagebar { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); } /* hints that it scrolls */
+  .stagebar > * { flex: none; }
+  .formatbar select { flex: none; width: 128px; }
+  .formatbar .dims input { width: 46px; }
+  .formatbar .dims .cm { display: none; }
+  .status { padding: 6px 14px; }
+  .menupanel { position: fixed; top: 58px; right: 8px; left: 8px; min-width: 0; max-height: calc(100dvh - 72px); overflow-y: auto; }
+  .menuhint { max-width: none; }
+  .seedrow { flex-wrap: wrap; }
+  .seedrow input[type='number'] { flex: 1 0 70px; }
+}
+
 /* Short or narrow preview: drop the decorative frame and shrink the title so the empty state still fits. */
-@media (max-width: 800px), (max-height: 760px) {
+@media (max-width: 900px), (max-height: 760px) {
   .emptyframe { display: none; }
-  .emptyhint { gap: 10px; padding: 12px; }
+  .emptyhint { gap: 10px; padding: 16px 12px; }
   .emptyhint h3 { font-size: 40px; }
   .emptyhint p { font-size: 13px; }
+}
+@media (max-width: 480px), (max-height: 520px) {
+  .emptyhint { gap: 8px; }
+  .emptyhint h3 { font-size: 32px; }
+  .emptyhint p { display: none; } /* the buttons say it already */
+  .emptyrow { gap: 8px; margin-top: 4px; }
+  .emptyrow button { min-width: 0; padding: 9px 16px; font-size: 13px; }
+  .emptyshapes { margin-top: 6px; gap: 8px; }
+  .shapegrid.big { gap: 6px; }
+  .shapegrid.big button.shapetile { width: 36px; height: 36px; border-radius: 10px; }
+}
+
+/* Touch screens: fingers need larger targets than a mouse. */
+@media (pointer: coarse) {
+  input[type='range'] { height: 28px; }
+  input[type='range']::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -10px; }
+  input[type='range']::-moz-range-thumb { width: 22px; height: 22px; }
+  .gh { width: 16px; height: 16px; margin: -8px 0 0 -8px; }
+  .gh::after { inset: -12px; }
+  button.eyebtn { width: 40px; height: 40px; }
+  .stagetools button { padding: 7px 14px; }
 }

@@ -842,8 +842,9 @@ function download(blob, name) {
 function fitCanvas() {
   if (!sketch) return
   const [ew, eh] = frameDims()
-  const aw = Math.max(200, stage.clientWidth - 32)
-  const ah = Math.max(200, stage.clientHeight - 32)
+  const m = stage.clientWidth < 600 ? 16 : 32 // tighter margin around the print on phones
+  const aw = Math.max(120, stage.clientWidth - m)
+  const ah = Math.max(120, stage.clientHeight - m)
   const k = Math.min(aw / ew, ah / eh)
   const w = Math.max(100, Math.floor(ew * k))
   const h = Math.max(100, Math.floor(eh * k))
@@ -922,7 +923,11 @@ centerBtn.addEventListener('click', () => {
 const stageTools = document.createElement('div')
 stageTools.className = 'stagetools'
 stageTools.append(handBtn, overlayBtn, centerBtn)
-stage.append(stageTools)
+// Tools and the format bar share one toolbar row above the preview, so they never cover each other or the picture.
+const stageBar = document.createElement('div')
+stageBar.className = 'stagebar'
+stageBar.append(stageTools, ...stage.querySelectorAll('.formatbar'))
+stage.before(stageBar)
 
 const startSketch = () =>
   new p5((s) => {
