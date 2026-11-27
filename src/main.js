@@ -11,6 +11,8 @@ import { aiStatus, aiGenerate, aiEdit, REFINE_PROMPT, CYANO_SUFFIX, AI_ENABLED, 
 import { createUI } from './ui.js'
 import { openBgRemove } from './bgdialog.js'
 import { createGuide } from './guide.js'
+import { createGestures } from './gestures.js'
+import { isTouch } from './device.js'
 import { clamp } from './math.js'
 import { encodePNG, encodeTIFF, toGray8, toGray16, toInkAlpha8 } from './encode.js'
 import { simulatePrint } from './cyanotype.js'
@@ -170,13 +172,13 @@ for (const [value, text] of FRAME_SHAPES) {
   startTiles.append(b)
 }
 startShapes.append(startTiles)
-// Viewfinder marks around an empty frame (decoration only).
-const emptyFrame = Object.assign(document.createElement('div'), { className: 'emptyframe' })
-emptyFrame.setAttribute('aria-hidden', 'true')
-for (const c of ['tl', 'tr', 'bl', 'br']) emptyFrame.append(Object.assign(document.createElement('span'), { className: `corner ${c}` }))
-for (const c of ['pt', 'pl', 'pr']) emptyFrame.append(Object.assign(document.createElement('span'), { className: `plus ${c}`, textContent: '+' }))
+// Viewfinder marks around an empty frame (decoration only). Hidden for now: uncomment to bring back.
+// const emptyFrame = Object.assign(document.createElement('div'), { className: 'emptyframe' })
+// emptyFrame.setAttribute('aria-hidden', 'true')
+// for (const c of ['tl', 'tr', 'bl', 'br']) emptyFrame.append(Object.assign(document.createElement('span'), { className: `corner ${c}` }))
+// for (const c of ['pt', 'pl', 'pr']) emptyFrame.append(Object.assign(document.createElement('span'), { className: `plus ${c}`, textContent: '+' }))
 emptyHint.append(
-  emptyFrame,
+  // emptyFrame,
   Object.assign(document.createElement('h3'), { className: 'display-title', textContent: 'Start a creation' }),
   Object.assign(document.createElement('p'), {
     textContent: AI_ENABLED
@@ -519,9 +521,10 @@ const ui = createUI(panel, params, {
   onUndo: undo,
   onRedo: redo,
   onCopySettings: copySettings,
+  onTouchHelp: () => showTouchHint(true),
   async onPasteSettings() {
     try {
-      if (!pasteSettings(await navigator.clipboard.readText())) ui.setStatus('The clipboard has no Cyano Creator settings. Copy some first.')
+      if (!pasteSettings(await navigator.clipboard.readText())) ui.setStatus('The clipboard has no Cyano Tool settings. Copy some first.')
     } catch {
       ui.setStatus('Paste blocked by the browser: click the page, then press ⌘V')
     }
@@ -929,6 +932,56 @@ stageBar.className = 'stagebar'
 stageBar.append(stageTools, ...stage.querySelectorAll('.formatbar'))
 stage.before(stageBar)
 
+// ---- Touch help: the gestures, shown once the first time a finger touches the preview (and from Settings) ----
+const TOUCH_HINT_KEY = 'cyano-touch-hint'
+const GESTURES = [
+  ['Pinch', 'Resize'],
+  ['Twist', 'Rotate'],
+  ['Two fingers drag', 'Move'],
+  ['Double tap', 'Reset'],
+  ['Two-finger tap', 'Undo'],
+  ['Three-finger tap', 'Redo'],
+]
+let touchHint = null
+function showTouchHint(force = false) {
+  if (touchHint) return
+  try {
+    if (!force && localStorage.getItem(TOUCH_HINT_KEY)) return
+  } catch {
+    /* storage unavailable: show it, it just cannot be remembered */
+  }
+  const card = document.createElement('div')
+  card.className = 'touchhint'
+  card.setAttribute('role', 'dialog')
+  card.setAttribute('aria-label', 'Touch gestures')
+  const head = document.createElement('div')
+  head.className = 'touchhint-head'
+  head.append(Object.assign(document.createElement('strong'), { textContent: 'Touch gestures' }))
+  const close = Object.assign(document.createElement('button'), { type: 'button', className: 'touchhint-close', textContent: 'Got it' })
+  head.append(close)
+  const list = document.createElement('ul')
+  for (const [how, what] of GESTURES) {
+    const li = document.createElement('li')
+    li.append(Object.assign(document.createElement('b'), { textContent: how }), Object.assign(document.createElement('span'), { textContent: what }))
+    list.append(li)
+  }
+  card.append(head, list, Object.assign(document.createElement('p'), { textContent: 'They act on the selected shape. Tap the background to work on the picture instead.' }))
+  const dismiss = () => {
+    card.remove()
+    touchHint = null
+    clearTimeout(timer)
+    try {
+      localStorage.setItem(TOUCH_HINT_KEY, '1')
+    } catch {
+      /* ignore */
+    }
+  }
+  close.addEventListener('click', dismiss)
+  const timer = setTimeout(dismiss, 14000)
+  touchHint = card
+  stage.append(card)
+}
+
 const startSketch = () =>
   new p5((s) => {
     s.setup = () => {
@@ -961,7 +1014,107 @@ const startSketch = () =>
         onEnd: () => stage.classList.remove('panning'),
       })
       let downAt = null // where a press began on empty background (a click there hides the guide)
+      let slop = null // a finger needs to move a few px before it counts as a drag (so a tap never nudges the shape)
+
+      // The shape under a point of the screen (top-most first), or undefined.
+      const hitAtClient = (cx, cy) => {
+        const r = cnv.elt.getBoundingClientRect()
+        const k = params.printH / r.height // cm per screen pixel
+        return hitFrame(params.frames, (cx - r.left - r.width / 2) * k, (cy - r.top - r.height / 2) * k)
+      }
+      const selectShape = (f) => {
+        if (ui.selectedFrame() !== f.id) {
+          ui.openFrame(f.id)
+          ui.rebuildFrames()
+          ui.revealFrames() // selecting a shape on the preview opens its controls, like in any design app
+        }
+        showGuide(true)
+      }
+
+      // ---- Touch gestures (gestures.js): pinch to resize, twist to rotate, two fingers to move, double tap to reset,
+      // two-finger tap to undo, three-finger tap to redo. They act on the selected shape; with none selected, on the picture.
+      let pinch = null // what the running gesture changes, and its values at the start
+      const turn = (deg) => ((((deg + 180) % 360) + 360) % 360) - 180
+      const snapDeg = (deg) => {
+        const near = Math.round(deg / 45) * 45
+        return Math.abs(deg - near) < 3 ? near : deg // a soft stop at 0° / 45° / 90°…
+      }
+      const zoomKey = () => (isCode() ? 'zoom' : 'xZoom')
+      const zoomRange = () => (isCode() ? [0.4, 2.5] : [0.4, 3])
+      const gestures = createGestures(cnv.elt, {
+        onStart({ x, y }) {
+          // Whatever one finger had started is cancelled: the two fingers take over.
+          drag = null
+          grab = null
+          downAt = null
+          slop = null
+          let f = guide?.isVisible() ? guidedFrame() : null
+          if (!f) {
+            const hit = hitAtClient(x, y) // fingers on a shape select it
+            if (hit && (hit.fill === 'solid' || frameImages.has(hit.id))) {
+              selectShape(hit)
+              f = hit
+            }
+          }
+          pinch = f
+            ? { kind: 'shape', f, x: f.x, y: f.y, scale: f.scale, rot: f.rot }
+            : { kind: 'picture', zoom: params[zoomKey()], rot: params.xRotate, px: params.xPanX, py: params.xPanY }
+          stage.classList.add('panning')
+        },
+        onMove({ scale, rotation, dx, dy }) {
+          if (!pinch) return
+          if (pinch.kind === 'shape') {
+            const f = pinch.f
+            const k = params.printH / cnv.elt.clientHeight
+            f.scale = clamp(Math.round(pinch.scale * scale * 1000) / 1000, 0.05, 3)
+            f.rot = Math.round(snapDeg(turn(pinch.rot + rotation)) * 10) / 10
+            f.x = clamp(Math.round((pinch.x + dx * k) * 100) / 100, -params.printW, params.printW)
+            f.y = clamp(Math.round((pinch.y + dy * k) * 100) / 100, -params.printH, params.printH)
+            ui.syncFrames()
+            updateGuide()
+            guide?.hint(`${Math.round(f.w * f.scale * 10) / 10} × ${Math.round(f.h * f.scale * 10) / 10} cm · ${f.rot}°`)
+            request('base')
+          } else {
+            const [lo, hi] = zoomRange()
+            const k = 2 / cnv.elt.clientHeight
+            ui.set(zoomKey(), clamp(pinch.zoom * scale, lo, hi))
+            ui.set('xRotate', Math.round(snapDeg(turn(pinch.rot + rotation)) * 2) / 2)
+            ui.set('xPanX', clamp(pinch.px + dx * k, -2, 2))
+            ui.set('xPanY', clamp(pinch.py + dy * k, -2, 2))
+            request(isCode() ? 'source' : 'base')
+          }
+        },
+        onEnd() {
+          pinch = null
+          guide?.hideHint()
+          stage.classList.remove('panning')
+        },
+        onTwoFingerTap: () => undo(),
+        onThreeFingerTap: () => redo(),
+        onDoubleTap({ x, y }) {
+          const hit = hitAtClient(x, y)
+          if (hit && (hit.fill === 'solid' || frameImages.has(hit.id))) {
+            hit.scale = 1
+            hit.rot = 0
+            selectShape(hit)
+            ui.syncFrames()
+            updateGuide()
+            request('base')
+            ui.setStatus('Shape reset · size and turn back to normal')
+          } else if (!hit) {
+            ui.set(zoomKey(), 1)
+            ui.set('xPanX', 0)
+            ui.set('xPanY', 0)
+            request(isCode() ? 'source' : 'base')
+            ui.setStatus('View reset · zoom and position back to normal')
+          }
+        },
+      })
+
       cnv.elt.addEventListener('pointerdown', (e) => {
+        if (gestures.active() || guide?.dragging()) return // two fingers are in charge, or a handle is being dragged
+        slop = e.pointerType === 'touch' ? { x: e.clientX, y: e.clientY, passed: false } : null
+        if (e.pointerType === 'touch') showTouchHint()
         drag = { x: e.clientX, y: e.clientY }
         grab = null
         downAt = null
@@ -986,7 +1139,13 @@ const startSketch = () =>
         if (hand || ovMode || grab) stage.classList.add('panning')
       })
       cnv.elt.addEventListener('pointermove', (e) => {
-        if (!drag) return
+        if (!drag || gestures.active()) return
+        if (slop && !slop.passed) {
+          if (Math.hypot(e.clientX - slop.x, e.clientY - slop.y) < 8) return // still a tap, not a drag
+          slop.passed = true
+          drag = { x: e.clientX, y: e.clientY } // start from here so the shape does not jump
+          return
+        }
         const dx = e.clientX - drag.x
         const dy = e.clientY - drag.y
         drag = { x: e.clientX, y: e.clientY }
@@ -1018,11 +1177,13 @@ const startSketch = () =>
       })
       const end = (e) => {
         // A plain click on the empty background (no drag) deselects: the guide goes away.
-        if (downAt && e?.type === 'pointerup' && !hand && !ovMode && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 4) showGuide(false)
+        const tol = e?.pointerType === 'touch' ? 10 : 4 // a finger wobbles more than a mouse
+        if (downAt && e?.type === 'pointerup' && !hand && !ovMode && !gestures.active() && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < tol) showGuide(false)
         downAt = null
         drag = null
         grab = null
-        stage.classList.remove('panning')
+        slop = null
+        if (!pinch) stage.classList.remove('panning')
       }
       cnv.elt.addEventListener('pointerup', end)
       cnv.elt.addEventListener('pointercancel', end)
@@ -1030,17 +1191,21 @@ const startSketch = () =>
         'wheel',
         (e) => {
           e.preventDefault()
-          const ov = ovMode && selectedOverlay()
+          // A trackpad pinch arrives as a wheel with Ctrl held, in much smaller steps: it acts like the finger pinch
+          // (the selected shape, if there is one) and needs a stronger factor.
+          const pinchWheel = e.ctrlKey
+          const speed = pinchWheel ? 0.01 : 0.001
+          const ov = (ovMode || (pinchWheel && guide?.isVisible())) && selectedOverlay()
           if (ov) {
-            ov.scale = clamp(Math.round(ov.scale * Math.exp(-e.deltaY * 0.001) * 1000) / 1000, 0.05, 3)
+            ov.scale = clamp(Math.round(ov.scale * Math.exp(-e.deltaY * speed) * 1000) / 1000, 0.05, 3)
             ui.syncFrames()
             updateGuide()
             request('base')
           } else if (isCode()) {
-            ui.set('zoom', clamp(params.zoom * Math.exp(-e.deltaY * 0.001), 0.4, 2.5))
+            ui.set('zoom', clamp(params.zoom * Math.exp(-e.deltaY * speed), 0.4, 2.5))
             request('source')
           } else {
-            ui.set('xZoom', clamp(params.xZoom * Math.exp(-e.deltaY * 0.001), 0.4, 3))
+            ui.set('xZoom', clamp(params.xZoom * Math.exp(-e.deltaY * speed), 0.4, 3))
             request('base')
           }
         },

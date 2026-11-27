@@ -8,14 +8,14 @@ const same = (list) => Object.fromEntries(list.map((s) => [s, s]))
 
 const strings = {
   ...same([
-    'Cyano Creator', 'Bloom', 'Reliquary', 'Medusa', 'Original', 'Gamma', 'Zoom', 'Demo: sensor', 'Medio oficio (21.6 × 16.5 cm)',
+    'Cyano Tool', 'Bloom', 'Reliquary', 'Medusa', 'Original', 'Gamma', 'Zoom', 'Demo: sensor', 'Medio oficio (21.6 × 16.5 cm)',
     'A4 (21 × 29.7 cm)', 'A3 @ 300 dpi', 'A2 @ 300 dpi', '300 dpi', '600 dpi', '360 dpi', '720 dpi', '.csv .tsv .txt .json',
     'JPEG, PNG, WebP, HEIC…', '2048 × 2048 (1:1)', '4096 × 4096 (1:1)', '6000 × 6000 (1:1, 36 MP)', '3840 × 2160 (16:9)',
     'Idea',
   ]),
 
   // ---- page, top bar, menus ----
-  'Cyano Creator — digital negatives for cyanotype': 'Cyano Creator — negativos digitales para cianotipia',
+  'Cyano Tool — digital negatives for cyanotype': 'Cyano Tool — negativos digitales para cianotipia',
   'Still images for cyanotype · prompt or code → controls → digital negative PNG / TIFF':
     'Imágenes fijas para cianotipia · prompt o código → controles → negativo digital PNG / TIFF',
   Generative: 'Generativo',
@@ -205,7 +205,7 @@ const strings = {
   'Settings copied · ⌘V pastes them here or in another tab of this app': 'Ajustes copiados · ⌘V los pega aquí o en otra pestaña de esta app',
   'Copy failed: the browser blocked the clipboard': 'Error al copiar: el navegador bloqueó el portapapeles',
   'Settings pasted · ⌘Z undoes it': 'Ajustes pegados · ⌘Z lo deshace',
-  'The clipboard has no Cyano Creator settings. Copy some first.': 'El portapapeles no contiene ajustes de Cyano Creator. Copia algunos primero.',
+  'The clipboard has no Cyano Tool settings. Copy some first.': 'El portapapeles no contiene ajustes de Cyano Tool. Copia algunos primero.',
   'Paste blocked by the browser: click the page, then press ⌘V': 'El navegador bloqueó el pegado: haz clic en la página y pulsa ⌘V',
   'Everything back to default · ⌘Z undoes it': 'Todo restablecido · ⌘Z lo deshace',
   'Solid shape added on the black background · pick it in the list to change its tone, size or position':
@@ -509,6 +509,26 @@ const strings = {
   'Slide Y': 'Desplazar Y',
   'No overlays yet. Add one, or start from a ready-made layout (for example 3 circles). Then pick it in the list to set its picture, size, shape and position.':
     'Aún no hay formas. Añade una o parte de una composición predefinida (por ejemplo, 3 círculos). Luego elígela en la lista para ajustar su imagen, tamaño, forma y posición.',
+  // ---- touch gestures ----
+  'Touch gestures': 'Gestos táctiles',
+  'Got it': 'Entendido',
+  Pinch: 'Pellizcar',
+  Resize: 'Cambiar tamaño',
+  Twist: 'Girar con dos dedos',
+  Rotate: 'Rotar',
+  'Two fingers drag': 'Arrastrar con dos dedos',
+  Move: 'Mover',
+  'Double tap': 'Doble toque',
+  Reset: 'Restablecer',
+  'Two-finger tap': 'Toque con dos dedos',
+  'Three-finger tap': 'Toque con tres dedos',
+  'They act on the selected shape. Tap the background to work on the picture instead.': 'Actúan sobre la forma seleccionada. Toca el fondo para trabajar sobre la imagen.',
+  'Pinch: resize · Twist: rotate · Two fingers: move · Double tap: reset · Two-finger tap: undo · Three-finger tap: redo':
+    'Pellizcar: tamaño · Girar: rotar · Dos dedos: mover · Doble toque: restablecer · Toque con dos dedos: deshacer · Toque con tres dedos: rehacer',
+  'Shape reset · size and turn back to normal': 'Forma restablecida · tamaño y giro normales',
+  'View reset · zoom and position back to normal': 'Vista restablecida · zoom y posición normales',
+  'Double-click a slider to reset · R: randomize · E: export · H: hand (move picture) · O: overlay tool (move / resize the selected overlay) · ⌘Z undo · ⇧⌘Z redo · ⌘C / ⌘V copy / paste settings · Delete: remove the selected shape · Trackpad: pinch to resize':
+    'Doble clic en un control deslizante para restablecerlo · R: aleatorio · E: exportar · H: mano (mover la imagen) · O: herramienta de formas (mover / cambiar el tamaño de la forma seleccionada) · ⌘Z deshacer · ⇧⌘Z rehacer · ⌘C / ⌘V copiar / pegar ajustes · Suprimir: quitar la forma seleccionada · Trackpad: pellizcar para cambiar el tamaño',
   solid: 'sólida',
   hidden: 'oculta',
   'Or start with a shape on black': 'O empieza con una forma sobre negro',

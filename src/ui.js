@@ -432,7 +432,8 @@ export function createUI(root, params, h) {
   const TABS = [['create', 'Create'], ['cyanotype', 'Cyanotype'], ['layers', 'Layers']]
   const pane = (id, kids) => el('div', { class: 'tabpane', role: 'tabpanel', 'data-tab': id, 'aria-label': Object.fromEntries(TABS)[id] }, kids)
   const panes = {
-    create: pane('create', [ideaFold, paramsFold, referenceFold, seedBlock, dock]),
+    // AI "Idea" field + Generate dock (Coming soon): hidden for now. Add ideaFold and dock back here when AI is ready.
+    create: pane('create', [/* ideaFold, */ paramsFold, referenceFold, seedBlock /*, dock */]),
     cyanotype: pane('cyanotype', [sectionEls.cyano, sectionEls.tone, exportBlock]),
     layers: pane('layers', [sectionEls.frames, sectionEls.effects, sectionEls.filaments, sectionEls.measure]),
   }
@@ -508,7 +509,10 @@ export function createUI(root, params, h) {
     el('button', { type: 'button', class: 'menuitem', role: 'menuitem', title: 'Paste settings copied from this app (⌘V)', onclick: () => h.onPasteSettings() }, [el('span', { text: 'Paste settings' }), el('kbd', { text: '⌘V' })]),
     el('button', { type: 'button', class: 'menuitem', role: 'menuitem', title: 'Return every transform, filament, tone and cyanotype control to its default (the picture itself stays)', onclick: () => h.onResetAll() }, [el('span', { text: 'Reset all controls' })]),
     el('div', { class: 'menusep' }),
-    el('div', { class: 'menuhint', text: 'Double-click a slider to reset · R: randomize · E: export · H: hand (move picture) · O: overlay tool (move / resize the selected overlay) · ⌘Z undo · ⇧⌘Z redo · ⌘C / ⌘V copy / paste settings' }),
+    // Shortcuts for a mouse and keyboard; gestures for a finger (the page switches by itself, see device.js).
+    el('div', { class: 'menuhint onlymouse', text: 'Double-click a slider to reset · R: randomize · E: export · H: hand (move picture) · O: overlay tool (move / resize the selected overlay) · ⌘Z undo · ⇧⌘Z redo · ⌘C / ⌘V copy / paste settings · Delete: remove the selected shape · Trackpad: pinch to resize' }),
+    el('button', { type: 'button', class: 'menuitem onlytouch', role: 'menuitem', onclick: () => h.onTouchHelp?.() }, [el('span', { text: 'Touch gestures' })]),
+    el('div', { class: 'menuhint onlytouch', text: 'Pinch: resize · Twist: rotate · Two fingers: move · Double tap: reset · Two-finger tap: undo · Three-finger tap: redo' }),
   ], true)
   // Language: the page follows the browser language the first time and then remembers the choice (see i18n.js).
   const langItems = LANGUAGES.map(([code, name]) =>

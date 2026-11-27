@@ -85,7 +85,7 @@ export function createGuide({ stage, canvas, params, frame, onChange, onStart, o
       transform: `rotate(${f.rot}deg)`,
     })
     for (const h of handles) h.node.style.cursor = cursorFor(h.hx, h.hy, f.rot)
-    if (drag) {
+    if (drag || !tip.hidden) {
       const a = (f.rot * Math.PI) / 180
       const ext = Math.abs((W / 2) * Math.sin(a)) + Math.abs((H / 2) * Math.cos(a)) // half the height of the turned box
       tip.style.left = `${clamp(cx, 40, cr.width - 40)}px`
@@ -189,5 +189,14 @@ export function createGuide({ stage, canvas, params, frame, onChange, onStart, o
   rotate.addEventListener('pointerup', end)
   rotate.addEventListener('pointercancel', end)
 
-  return { update, setVisible, isVisible: () => visible, dragging: () => !!drag }
+  /** Show the live size / angle label (used by the two-finger gestures, which do not drag a handle). */
+  function hint(text) {
+    showTip(text)
+    update()
+  }
+  function hideHint() {
+    if (!drag) tip.hidden = true
+  }
+
+  return { update, setVisible, isVisible: () => visible, dragging: () => !!drag, hint, hideHint }
 }
